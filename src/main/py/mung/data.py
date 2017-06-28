@@ -1,22 +1,27 @@
 import numpy as np
 import copy
-from jsonpath_ng import jsonpath, parse
+from jsonpath_ng import jsonpath
+from jsonpath_ng.ext import parse
 from os import listdir
 from os.path import isfile, join
 import json
 
 class Datum:
-    def __init__(self, properties=dict())
+    def __init__(self, properties=dict(), id_key="id"):
         self._properties = properties
+        self._id_key = id_key
 
-        if "id" not in properties or "type" not in properties:
-            raise ValueError("Datum properties object must have an id and a type")
+        if id_key not in properties:
+            raise ValueError("Datum properties object must have an id")
 
     def get_id(self):
-        return self._properties["id"]
+        return self._properties[self._id_key]
 
     def get_type(self):
-        return self._properties["type"]
+        if "type" not in self._properties:
+            return None
+        else:
+            return self._properties["type"]
 
     def has(self, path):
         return len([match.value for match in parse(path).find(self._properties)]) > 0
@@ -24,9 +29,9 @@ class Datum:
     def get(self, path, first=True, include_paths=False):
         # FIXME: This should handle reference datums 
         # at some point
-        path_values = [(match.full_path, match.value) for match in parse(path).find(self._properties)]
+        path_values = [(str(match.full_path), match.value) for match in parse(path).find(self._properties)]
         if first:
-            if len(values) == 0:
+            if len(path_values) == 0:
                 return None
             else:
                 if include_paths:
@@ -40,15 +45,15 @@ class Datum:
                 return [path_value[1] for path_value in path_values]
  
     def get_mutable(self):
-        return MutableDatum(properties=copy.deepcopy(self._properties))
+        return MutableDatum(properties=copy.deepcopy(self._properties), id_key=self._id_key)
 
     def __eq__(self, other):
         if isinstance(other, Datum):
-            return self._properties["id"] == other._properties["id"]
+            return self._properties[self._id_key] == other._properties[self._id_key]
         return NotImplemented
 
     def __hash__(self):
-        return hash(self._properties["id"])
+        return hash(self._properties[self._id_key])
 
     def save(self, dir_path, name=None):
         if name is None:
@@ -57,14 +62,15 @@ class Datum:
             json.dump(self._properties, fp)
 
     @staticmethod
-    def load(file_path):
+    def load(file_path, id_key="id"):
         with open(file_path, 'r') as fp:
-            return Datum(properties=json.load(fp))
+            properties = json.load(fp)
+            return Datum(properties=properties, id_key=id_key)
 
 
 class MutableDatum(Datum):
-    def __init__(self, properties=dict()):
-        Datum.__init__(self, properties)
+    def __init__(self, properties=dict(), id_key="id"):
+        Datum.__init__(self, properties, id_key=id_key)
 
     def set(self, key, value, path=None):
         objs = [self._properties]
@@ -84,6 +90,13 @@ class DatumReference():
 
     def get_path(self):
         return self._path
+
+    def get_type(self):
+        obj = self.get()
+        if "type" in obj:
+            return obj["type"]
+        else:
+            return None
 
     def get(self):
         return self._datum.get(self._path)
@@ -109,7 +122,7 @@ class DataSet:
         perm = np.random.permutation(len(self._data))
         shuffled_data = []
         for i in range(len(perm)):
-            shuffled_data.append(self._data.get(perm[i]))
+            shuffled_data.append(self._data[perm[i]])
         self._data = shuffled_data
 
     def split(self, sizes):
@@ -129,10 +142,10 @@ class DataSet:
             datum.save(data_dir)
 
     @staticmethod
-    def load(data_dir):
+    def load(data_dir, id_key="id"):
         D = DataSet()
         files = [join(data_dir, f) for f in listdir(data_dir) if isfile(join(data_dir, f))]
         for f in files:
-            D._data.append(Datum.load(f))
+            D._data.append(Datum.load(f, id_key=id_key))
         D.shuffle() # Ensure deterministic order if random seeded
         return D
