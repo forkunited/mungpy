@@ -1,7 +1,6 @@
 import abc
 import mung.data
 
-TYPE_TEXT = "String"
 TYPE_TOKENS = "NLPTokens"
 TYPE_POS = "NLPPoS"
 TYPE_LEMMAS = "NLPLemmas"
@@ -25,9 +24,8 @@ class Annotator(object):
     def annotate_data(self, data):
         annotated_data = []
         for i in range(data.get_size()):
-            print "Annotating " + data.get(i).get_id() 
+            print "Annotating " + data.get(i).get_id() + " (" + str(i+1) +  "/" + str(data.get_size()) + ")" 
             annotated_data.append(self.annotate_datum(data.get(i)))
-            break
         return mung.data.DataSet(data=annotated_data)
 
     def annotate_datum(self, datum, in_place=False):

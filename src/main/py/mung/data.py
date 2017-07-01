@@ -1,10 +1,13 @@
 import numpy as np
 import copy
+import abc
 from jsonpath_ng import jsonpath
 from jsonpath_ng.ext import parse
 from os import listdir
 from os.path import isfile, join
 import json
+
+JSON_PATH_CACHE = dict()
 
 class Datum:
     def __init__(self, properties=dict(), id_key="id"):
@@ -24,12 +27,12 @@ class Datum:
             return self._properties["type"]
 
     def has(self, path):
-        return len([match.value for match in parse(path).find(self._properties)]) > 0
+        return len([match.value for match in Datum.parse_path(path).find(self._properties)]) > 0
 
     def get(self, path, first=True, include_paths=False):
         # FIXME: This should handle reference datums 
         # at some point
-        path_values = [(str(match.full_path), match.value) for match in parse(path).find(self._properties)]
+        path_values = [(str(match.full_path), match.value) for match in Datum.parse_path(path).find(self._properties)]
         if first:
             if len(path_values) == 0:
                 return None
@@ -66,6 +69,14 @@ class Datum:
         with open(file_path, 'r') as fp:
             properties = json.load(fp)
             return Datum(properties=properties, id_key=id_key)
+
+    @staticmethod
+    def parse_path(path_json, cache=True):
+        if not cache:
+            return parse(path_json)
+        if path_json not in JSON_PATH_CACHE:
+            JSON_PATH_CACHE[path_json] = parse(path_json)        
+        return JSON_PATH_CACHE[path_json]
 
 
 class MutableDatum(Datum):
