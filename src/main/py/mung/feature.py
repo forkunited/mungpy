@@ -1,5 +1,7 @@
 import numpy as np
 import abc
+import json
+import dill as pickle
 from mung import data
 from bidict import bidict
 from collections import Counter
@@ -13,6 +15,10 @@ class FeatureToken(object):
     @abc.abstractmethod
     def __str__(self):
         """ Returns a string representation of the feature """
+
+    @abc.abstractmethod
+    def get_name(self):
+        """ Returns the name of the feature token """
 
     @abc.abstractmethod
     def init_start(self):
@@ -32,6 +38,10 @@ class FeatureType(object):
 
     def __init__(self):
         pass
+
+    @abc.abstractmethod
+    def get_name(self):
+        """ Returns the name of the feature type """
 
     @abc.abstractmethod
     def get_size(self):
@@ -61,6 +71,13 @@ class FeatureType(object):
     def init_end(self):
         """ End initializing the feature """
 
+    @abc.abstractmethod
+    def save(self, file_path):
+        """ Save a representation of the feature to file """
+
+    @staticmethod
+    def load(data_dir, id_key="id"):
+
 
 class FeatureSequence(object):
     __metaclass__ = abc.ABCMeta
@@ -71,6 +88,10 @@ class FeatureSequence(object):
     @abc.abstractmethod
     def __eq__(self, feature_seq):
         """ Returns whether two feature sequences are the same """
+
+    @abc.abstractmethod
+    def get_name(self):
+        """ Returns the name of the feature sequence """
 
     @abc.abstractmethod
     def get_size(self):
@@ -92,6 +113,10 @@ class FeatureSequence(object):
     def init_end(self):
         """ End initializing the feature sequence """
 
+    @abc.abstractmethod
+    def save(self, file_path):
+        """ Save a representation of the feature sequence to file """
+
 
 class FeatureMatrixToken(FeatureToken):
     def __init__(self, name, index):
@@ -101,6 +126,9 @@ class FeatureMatrixToken(FeatureToken):
 
     def __str__(self):
         return self._name + "_" + str(self._index)
+
+    def get_name(self):
+        return self._name
 
     def init_start(self):
         pass
@@ -121,6 +149,9 @@ class FeatureMatrixType(FeatureType):
     def compute(self, datum, vec. start_index):
         vec[start_index:start_index+self._size] = self._matrix_fn(datum).flatten()
         return vec
+
+    def get_name(self):
+        return self._name
 
     def get_size(self):
         return self._size
@@ -143,6 +174,29 @@ class FeatureMatrixType(FeatureType):
 
     def init_end(self):
         pass
+
+    def save(self, file_path):
+        obj = dict()
+        obj["type"] = "FeatureMatrixType"
+        obj["name"] = self._name
+        obj["matrix_fn"] = pickle.dumps(self._matrix_fn)
+        obj["size"] = self._size
+        with open(file_path, 'w') as fp:
+            json.dump(obj, fp)
+
+    @staticmethod
+    def load(file_path):
+        with open(file_path, 'r') as fp:
+            obj = json.load(fp)
+            return FeatureMatrixType.from_dict(obj)
+
+    @staticmethod
+    def from_dict(obj):
+        name = obj["name"]
+        matrix_fn = pickle.loads(obj["matrix_fn"])
+        size = obj["size"]
+        return FeatureMatrixType(name, matrix_fn, size)
+
 
 class FeatureMatrixSequence(FeatureSequence):
     def __init__(self, name, matrix_fn, sequence_length, feature_size):
@@ -170,6 +224,9 @@ class FeatureMatrixSequence(FeatureSequence):
             return False
         return True
 
+    def get_name(self):
+        return self._name
+
     def get_size(self):
         return self._sequence_length
 
@@ -185,6 +242,52 @@ class FeatureMatrixSequence(FeatureSequence):
     def init_end(self):
         pass
 
+    def save(self, file_path):
+        obj = dict()
+        obj["type"] = "FeatureMatrixSequence"
+        obj["name"] = self._name
+        obj["matrix_fn"] = pickle.dumps(self._matrix_fn)
+        obj["sequence_length"] = self._sequence_length
+        obj["feature_size"] = self._feature_size
+        with open(file_path, 'w') as fp:
+            json.dump(obj, fp)
+
+    @staticmethod
+    def load(file_path):
+        with open(file_path, 'r') as fp:
+            obj = json.load(fp)
+            return FeatureMatrixSequence.from_dict(obj)
+
+    @staticmethod
+    def from_dict(obj):
+        name = obj["name"]
+        matrix_fn = pickle.loads(obj["matrix_fn"])
+        sequence_length = obj["sequence_length"]
+        feature_size = obj["feature_size"]
+        return FeatureMatrixSequence(name, matrix_fn, sequence_length, feature_size)
+
+
+class FeaturePathToken(FeatureToken):
+    def __init__(self, name, index, token):
+        FeatureToken.__init__(self)
+        self._name = name
+        self._index = index
+        self._token = token
+
+    def __str__(self):
+        return self._name + "_" + str(self._token)
+
+    def get_name(self):
+        return self._name
+
+    def init_start(self):
+        pass
+
+    def init_datum(self, datum):
+        pass
+
+    def init_end(self):
+        pass
 
 class FeaturePathType(FeatureType):
     VALUE_ENUMERABLE_ONE_HOT = 0
@@ -264,6 +367,9 @@ class FeaturePathType(FeatureType):
             path_to_values[path] = values
         return self._apply_value_fn(path_to_values)
 
+    def get_name(self):
+        return self._name
+
     def compute(self, datum, vec, start_index):
         path_values = self._get_path_values(datum)
         if self._seq_index is not None:
@@ -283,7 +389,7 @@ class FeaturePathType(FeatureType):
         return len(self._vocab)
 
     def get_token(self, index):
-        return FeaturePathToken(self._name, index)
+        return FeaturePathToken(self._name, index, self._vocab.inv[index])
 
     def __eq__(self, feature_type):
         if not isinstance(feature_type, FeaturePathType):
@@ -347,9 +453,52 @@ class FeaturePathType(FeatureType):
         
         self._counter = None
 
+    def save(self, file_path):
+        obj = dict()
+        obj["type"] = "FeaturePathType"
+        obj["name"] = self._name
+        obj["paths"] = self._paths
+        obj["min_occur"] = self._min_occur
+        obj["no_init"] = self._no_init
+        obj["value_type"] = self._value_type
+        if self._value_fn is not None:
+            obj["value_fn"] = pickle.dumps(self._value_fn)
+        if self._seq_index is not None:
+            obj["seq_index"] = self._seq_index
+        if self._vocab is not None:
+            obj["vocab"] = dict(self._vocab)
+        
+        with open(file_path, 'w') as fp:
+            json.dump(obj, fp)
+
+    @staticmethod
+    def load(file_path):
+        with open(file_path, 'r') as fp:
+            obj = json.load(fp)
+            return FeaturePathType.from_dict(obj)
+
+    @staticmethod
+    def from_dict(obj):
+        name = obj["name"]
+        paths = obj["paths"]
+        min_occur = obj["min_occur"]
+        no_init = obj["no_init"]
+        value_type = obj["value_type"]
+        value_fn = None
+        if "value_fn" in obj:
+            value_fn = pickle.loads(self._value_fn)
+        seq_index = None
+        if "seq_index" in obj:
+            seq_index = obj["seq_index"]
+        vocab = None
+        if "vocab" in obj:
+            vocab = bidict(obj["vocab"]) 
+
+        return FeaturePathType(name, paths, min_occur=min_occur, no_init=no_init, value_type=value_type, value_fn=value_fn, seq_index=seq_index, vocab=vocab)
+
 
 class FeaturePathSequence(FeatureSequence):
-    def __init__(self, name, paths, seq_length, min_occur=2, value_type=FeaturePathType.VALUE_ENUMERABLE_ONE_HOT, value_fn=None):
+    def __init__(self, name, paths, seq_length, min_occur=2, value_type=FeaturePathType.VALUE_ENUMERABLE_ONE_HOT, value_fn=None, vocab=None):
         FeatureSequence.__init__(self)
         self._name = name
         self._paths = paths
@@ -362,12 +511,32 @@ class FeaturePathSequence(FeatureSequence):
         self._init_type = None
         self._types = []
 
+        if vocab is not None:
+            self._vocab = vocab
+            self._init_types()
+
+    def _init_types(self):
+        self._types = []
+        for i in range(self._seq_length):
+            self._types.append(FeaturePathType(name,
+                self._paths,
+                min_occur=self._min_occur,
+                no_init=True,
+                value_type=self._value_type,
+                value_fn=self._value_fn,
+                seq_index=i,
+                vocab=self._vocab
+            ))
+
     def __eq__(self, feature_seq):
         if not isinstance(feature_seq, FeaturePathSequence):
             return False
         if self._name != feature_seq.name:
             return False
         return True
+
+    def get_name(self):
+        return self._name
 
     def get_size(self):
         return self._seq_length
@@ -393,19 +562,45 @@ class FeaturePathSequence(FeatureSequence):
 
     def init_end(self):
         self._init_type.init_end()
-        self._types = []
-        for i in range(self._seq_length)
-            self._types.append(FeaturePathType(name, 
-                self._paths, 
-                min_occur=self._min_occur, 
-                no_init=True, 
-                value_type=self._value_type, 
-                value_fn=self._value_fn, 
-                seq_index=i, 
-                vocab=self._vocab
-            ))
-
+        self._types = self._init_types()
         self._init_type = None
+
+    def save(self, file_path):
+        obj = dict()
+        obj["type"] = "FeaturePathSequence"
+        obj["name"] = self._name
+        obj["paths"] = self._paths
+        obj["seq_length"] = self._seq_length
+        obj["min_occur"] = self._min_occur
+        obj["value_type"] = self._value_type
+        if self._value_fn is not None:
+            obj["value_fn"] = pickle.dumps(self._value_fn)
+        if self._vocab is not None:
+            obj["vocab"] = dict(self._vocab)
+
+        with open(file_path, 'w') as fp:
+            json.dump(obj, fp)
+
+    @staticmethod
+    def load(file_path):
+        with open(file_path, 'r') as fp:
+            obj = json.load(fp)
+            return FeaturePathSequence.from_dict(obj)
+
+    @staticmethod
+    def from_dict(obj):
+        name = obj["name"]
+        paths = obj["paths"]
+        seq_length = obj["seq_length"]
+        min_occur = obj["min_occur"]
+        value_type = obj["value_type"]
+        value_fn = None
+        if "value_fn" in obj:
+            value_fn = pickle.loads(self._value_fn)
+        vocab = None
+        if "vocab" in obj:
+            vocab = bidict(obj["vocab"])
+        return FeaturePathSequence(name, paths, seq_length, min_occur=min_occur, value_type=value_type, value_fn=value_fn, vocab=vocab)
 
 
 class FeatureSet:
@@ -476,6 +671,23 @@ class FeatureSet:
 
     def copy(self):
         return FeatureSet(feature_types=self._feature_types)
+
+    def save(self, dir_path):
+        for feature_type in self._feature_types:
+            feature_type.save(join(dir_path, feature_type.get_name()))           
+
+    @staticmethod
+    def load(dir_path):
+        file_paths = [join(dir_path, f) for f in listdir(dir_path) if isfile(join(dir_path, f))]       
+        feature_types = []
+        for file_path in file_paths:
+            with open(file_path, 'r') as fp:
+                obj = json.load(fp)
+                if obj["type"] == "FeaturePathType":
+                    feature_types.append(FeaturePathType.from_dict(obj))
+                elif obj["type"] == "FeatureMatrixType":
+                    feature_types.append(FeatureMatrixType.from_dict(obj)) 
+        return FeatureSet(feature_types=feature_types)
 
 
 class FeatureSequenceSet:
@@ -564,14 +776,40 @@ class FeatureSequenceSet:
     def copy(self):
         return FeatureSequenceSet(feature_seqs=self._feature_seqs)
 
+    def save(self, dir_path):
+        for feature_seq in self._feature_seqs:
+            feature_seq.save(join(dir_path, feature_seq.get_name()))
+
+    @staticmethod
+    def load(dir_path):
+        file_paths = [join(dir_path, f) for f in listdir(dir_path) if isfile(join(dir_path, f))]
+        feature_seqs = []
+        for file_path in file_paths:
+            with open(file_path, 'r') as fp:
+                obj = json.load(fp)
+                if obj["type"] == "FeaturePathSequence":
+                    feature_seqs.append(FeaturePathSequence.from_dict(obj))
+                elif obj["type"] == "FeatureMatrixSequence":
+                    feature_seqs.append(FeatureMatrixSequence.from_dict(obj))
+        return FeatureSequenceSet(feature_seqs=feature_seqs)
+
 
 class DataFeatureMatrix:
-    def __init__(self, data, feature_set, init_features=True):
+    def __init__(self, data, feature_set, init_features=True, mat=None):
         self._data = data
         self._feature_set = feature_set
         self._mat = None
         self._nz_indices = None
-        self._compute(init_features=init_features)
+        if mat is None:
+            self._compute(init_features=init_features)
+        else:
+            self._mat = mat
+            self._nz_indices = []
+            for i in range(data.get_size()):
+                self._nz_indices.append([])
+                for j in range(len(self._mat[i])):
+                    if self._mat[i,j] != 0.0:
+                        self._nz_indices[i].append(j)
 
     def get_data(self):
         return self._data
@@ -664,13 +902,47 @@ class DataFeatureMatrix:
         self._mat = shuffled_mat
         self._nz_indices = shuffled_nz
 
+    def save(self, dir_path):
+        info_path = join(dir_path, "info")
+        mat_path = join(dir_path, "mat")
+        feats_dir = join(dir_path, "feats")
+        
+        info = dict()
+        info["data_dir"] = self._data.get_directory()
+        info["id_key"] = self._data.get_id_key()        
+        with open(info_path, 'w') as fp:
+            json.dump(info, fp)
+         
+        np.save(mat_path, self._mat)
+        self._feature_set.save(feats_dir)
+
+    @staticmethod
+    def load(dir_path):
+        info_path = join(dir_path, "info")
+        mat_path = join(dir_path, "mat")
+        feats_dir = join(dir_path, "feats")
+
+        data = None
+        with open(info_path, 'r') as fp:
+            obj = json.load(fp)
+            data = DataSet.load(obj["data_dir"], id_key=obj["id_key"])
+
+        mat = np.load(mat_path)
+        feature_set = FeatureSet.load(feats_dir)
+
+        return DataFeatureMatrix(data, feature_set, init_features=False, mat=mat)
+
 
 class DataFeatureMatrixSequence:
-    def __init__(self, data, feature_seq_set):
+    def __init__(self, data, feature_seq_set, mats=None):
         self._data = data
         self._feature_seq_set = feature_seq_set
         self._dfmats = []
-        self._compute()
+        if dfmats is None:
+            self._compute()
+        else:
+            for mat in mats:
+                self._dfmats.append(DataFeatureMatrix(data, self._feature_seq_set.get_feature_set(i), init_features=False, mat=mat))
 
     def get_data(self):
         return self._data
@@ -730,3 +1002,37 @@ class DataFeatureMatrixSequence:
         for dfmat in self._dfmats:
             dfmat.reorder(perm, preordered_data=self._data)
 
+    def save(self, dir_path):
+        info_path = join(dir_path, "info")
+        mats_dir = join(dir_path, "mats")
+        feats_dir = join(dir_path, "feats")
+
+        info = dict()
+        info["data_dir"] = self._data.get_directory()
+        info["id_key"] = self._data.get_id_key()
+        info["size"] = len(self._dfmats)
+        with open(info_path, 'w') as fp:
+            json.dump(info, fp)
+
+        self._feature_seq_set.save(feats_dir)
+        for i in range(len(self._dfmats)):
+            np.save(join(mats_dir, str(i)), dfmat.get_matrix())
+
+    @staticmethod
+    def load(dir_path):
+        info_path = join(dir_path, "info")
+        mats_path = join(dir_path, "mats")
+        feats_dir = join(dir_path, "feats")
+
+        data = None
+        with open(info_path, 'r') as fp:
+            obj = json.load(fp)
+            data = DataSet.load(obj["data_dir"], id_key=obj["id_key"])
+
+        feature_set = FeatureSequenceSet.load(feats_dir)
+
+        mats = []
+        for i in range(obj["size"]):
+            mats.append(np.load(join(mats_path, str(i))))
+
+        return DataFeatureMatrixSequence(data, feature_seq_set, mats=mats)

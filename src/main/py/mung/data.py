@@ -114,8 +114,16 @@ class DatumReference():
 
 
 class DataSet:
-    def __init__(self, data=[]):
+    def __init__(self, data=[], id_key="id", source_dir=None):
         self._data = list(data)
+        self._id_key = id_key
+        self._source_dir = source_dir
+
+    def get_id_key(self):
+        return self._id_key
+
+    def get_directory(self):
+        return self._source_dir
 
     def get(self, i):
         return self._data[i]
@@ -149,12 +157,13 @@ class DataSet:
         return datas
 
     def save(self, data_dir):
+        self._source_dir = source_dir
         for datum in self._data:
             datum.save(data_dir)
 
     @staticmethod
     def load(data_dir, id_key="id"):
-        D = DataSet()
+        D = DataSet(id_key=id_key, source_dir=data_dir)
         files = [join(data_dir, f) for f in listdir(data_dir) if isfile(join(data_dir, f))]
         for f in files:
             D._data.append(Datum.load(f, id_key=id_key))
