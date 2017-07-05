@@ -1,6 +1,7 @@
 import numpy as np
 import copy
 import abc
+import os
 from jsonpath_ng import jsonpath
 from jsonpath_ng.ext import parse
 from os import listdir
@@ -57,6 +58,9 @@ class Datum:
 
     def __hash__(self):
         return hash(self._properties[self._id_key])
+
+    def to_dict(self):
+        return self._properties
 
     def save(self, dir_path, name=None):
         if name is None:
@@ -156,16 +160,46 @@ class DataSet:
             datas.append(DataSet(data=part_data))
         return datas
 
-    def save(self, data_dir):
-        self._source_dir = source_dir
-        for datum in self._data:
-            datum.save(data_dir)
+    def save(self, data_dir, batch=1000):
+        if batch is None:
+            self._source_dir = data_dir
+            for datum in self._data:
+                datum.save(data_dir)
+        else:
+            with open(join(data_dir, "batch"), 'w') as fp:
+                json.dump({ "batch_size" : batch }, fp)
+            
+            cur_batch = []
+            i = 0
+            for datum in self._data:
+                cur_batch.append(datum.to_dict())
+                if len(cur_batch) == batch:
+                    with open(join(data_dir, str(i)), 'w') as fp:
+                        json.dump({ "batch" : cur_batch }, fp)
+                    i += 1
+                    cur_batch = []
+
+            if len(cur_batch) > 0:
+                with open(join(data_dir, str(i)), 'w') as fp:
+                    json.dump({ "batch" : cur_batch }, fp)
 
     @staticmethod
     def load(data_dir, id_key="id"):
         D = DataSet(id_key=id_key, source_dir=data_dir)
-        files = [join(data_dir, f) for f in listdir(data_dir) if isfile(join(data_dir, f))]
-        for f in files:
-            D._data.append(Datum.load(f, id_key=id_key))
+        files = [join(data_dir, f) for f in listdir(data_dir) if isfile(join(data_dir, f)) and f != "batch"]
+
+        if not os.path.isfile(join(data_dir, "batch")):
+            for f in files:
+                D._data.append(Datum.load(f, id_key=id_key))
+        else:
+            for f in files:
+                with open(f, 'r') as fp:
+                    D_sub = json.load(fp)
+                    for properties in D_sub["batch"]:
+                        D._data.append(Datum(properties=properties, id_key=id_key))
+
         D.shuffle() # Ensure deterministic order if random seeded
+        print "Loaded data of size " + str(D.get_size()) + "."
         return D
+        
+

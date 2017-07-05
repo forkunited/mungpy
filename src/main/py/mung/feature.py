@@ -2,9 +2,19 @@ import numpy as np
 import abc
 import json
 import dill as pickle
+import os.path
 from mung import data
 from bidict import bidict
 from collections import Counter
+from os.path import join
+
+VALUE_ENUMERABLE_ONE_HOT = 0
+VALUE_SCALAR = 1
+
+SYMBOL_SEQ_START = "SYM_START"
+SYMBOL_SEQ_MID = "SYM_MID"
+SYMBOL_SEQ_END = "SYM_END"
+SYMBOL_SEQ_UNC = "SYM_UNC"
 
 class FeatureToken(object):
     __metaclass__ = abc.ABCMeta
@@ -75,9 +85,6 @@ class FeatureType(object):
     def save(self, file_path):
         """ Save a representation of the feature to file """
 
-    @staticmethod
-    def load(data_dir, id_key="id"):
-
 
 class FeatureSequence(object):
     __metaclass__ = abc.ABCMeta
@@ -98,7 +105,7 @@ class FeatureSequence(object):
         """ Returns the length of the feature sequence """
 
     @abc.abstractmethod
-    def get_type(self, index)
+    def get_type(self, index):
         """ Returns a feature type from the sequence """
 
     @abc.abstractmethod
@@ -146,7 +153,7 @@ class FeatureMatrixType(FeatureType):
         self._matrix_fn = matrix_fn
         self._size = size
 
-    def compute(self, datum, vec. start_index):
+    def compute(self, datum, vec, start_index):
         vec[start_index:start_index+self._size] = self._matrix_fn(datum).flatten()
         return vec
 
@@ -230,7 +237,7 @@ class FeatureMatrixSequence(FeatureSequence):
     def get_size(self):
         return self._sequence_length
 
-    def get_type(self, index)
+    def get_type(self, index):
         return self._types[index]
 
     def init_start(self):
@@ -290,15 +297,7 @@ class FeaturePathToken(FeatureToken):
         pass
 
 class FeaturePathType(FeatureType):
-    VALUE_ENUMERABLE_ONE_HOT = 0
-    VALUE_SCALAR = 1
-
-    SYMBOL_SEQ_START = "SYM_START"
-    SYMBOL_SEQ_MID = "SYM_MID"
-    SYMBOL_SEQ_END = "SYM_END"
-    SYMBOL_SEQ_UNC = "SYM_UNC"
-
-    def __init__(self, name, paths, min_occur=2, no_init=False, value_type=FeaturePathType.VALUE_ENUMERABLE_ONE_HOT, value_fn=None, seq_index=None, vocab=None):
+    def __init__(self, name, paths, min_occur=2, no_init=False, value_type=VALUE_ENUMERABLE_ONE_HOT, value_fn=None, seq_index=None, vocab=None):
         FeatureType.__init__(self)
         self._name = name
         self._paths = paths
@@ -331,13 +330,13 @@ class FeaturePathType(FeatureType):
             if len(values) == 0:
                 continue
             if isinstance(values[0], list):
-                if self._value_type != FeaturePathType.VALUE_SCALAR:
+                if self._value_type != VALUE_SCALAR:
                     new_values = []
-                    new_values.append(FeaturePathType.SYMBOL_SEQ_START)
+                    new_values.append(SYMBOL_SEQ_START)
                     for value in values:
                         new_values.extend(value)
-                       new_values.append(FeaturePathType.SYMBOL_SEQ_MID)
-                    new_values[len(new_values)-1] = FeaturePathType.SYMBOL_SEQ_END
+                        new_values.append(SYMBOL_SEQ_MID)
+                    new_values[len(new_values)-1] = SYMBOL_SEQ_END
                     values = new_values[:seq_index+1]
                 else:
                     values = [el for el in value for value in values][:seq_index+1]
@@ -377,11 +376,15 @@ class FeaturePathType(FeatureType):
         for path_value in path_values:
             index = None
             value = None
-            if self._value_type == FeaturePathType.VALUE_SCALAR:
+            if self._value_type == VALUE_SCALAR:
                 index = self._vocab[path_value[0]]
                 value = path_value[1]
             else:
-                index = self._vocab[path_value[0] + "_" + path_value[1]]
+                key = path_value[0] + "_" + path_value[1]
+                if key in self._vocab:
+                    index = self._vocab[key]
+                else:
+                    index = self._vocab[path_value[0] + "_" + SYMBOL_SEQ_UNC]
                 value = 1.0
             vec[start_index + index] = value
 
@@ -408,7 +411,7 @@ class FeaturePathType(FeatureType):
             return
         if self._seq_index is not None:
             path_values_seq = self._get_path_values(datum)
-            if self._value_type == FeaturePathType.VALUE_SCALAR:
+            if self._value_type == VALUE_SCALAR:
                 for path_values in path_values_seq:
                     for path_value in path_values:
                         self._counter[path_value[0]] += 1
@@ -418,7 +421,7 @@ class FeaturePathType(FeatureType):
                         self._counter[path_value[0] + "_" + path_value[1]] += 1
         else:
             path_values = self._get_path_values(datum)
-            if self._value_type == FeaturePathType.VALUE_SCALAR:
+            if self._value_type == VALUE_SCALAR:
                 for path_value in path_values:
                     self._counter[path_value[0]] += 1
             else:
@@ -430,26 +433,31 @@ class FeaturePathType(FeatureType):
             return
         vocab_list = []
         for key, count in self._counter:
-            if self._value_type == FeaturePathType.VALUE_SCALAR or count >= self._min_occur:
+            if self._value_type == VALUE_SCALAR or count >= self._min_occur:
                 vocab_list.append(key)
         vocab_list.sort()
 
         self._vocab = bidict()
-        if self._seq_index is not None and self._value_type != FeaturePathType.VALUE_SCALAR:
-            self._vocab[FeaturePathType.SYMBOL_SEQ_UNC] = 0
-            self._vocab[FeaturePathType.SYMBOL_SEQ_START] = 1
-            self._vocab[FeaturePathType.SYMBOL_SEQ_END] = 2
-            self._vocab[FeaturePathType.SYMBOL_SEQ_MID] = 3
-            
-            index = 4
-            for v in vocab_list:
-                self._vocab[v] = index
+        if self._seq_index is not None and self._value_type != VALUE_SCALAR:
+            index = 0
+            for path in self._paths:
+                self._vocab[path + "_" + SYMBOL_SEQ_UNC] = index*4
+                self._vocab[path + "_" + SYMBOL_SEQ_START] = index*4+1
+                self._vocab[path + "_" + SYMBOL_SEQ_END] = index*4+2
+                self._vocab[path + "_" + SYMBOL_SEQ_MID] = index*4+3
                 index += 1
+            
+            index = index*4
+            for v in vocab_list:
+                if v not in self._vocab:
+                    self._vocab[v] = index
+                    index += 1
         else:
             index = 0
             for v in vocab_list:
-                self._vocab[v] = index
-                index += 1
+                if v not in self._vocab:
+                    self._vocab[v] = index
+                    index += 1
         
         self._counter = None
 
@@ -498,11 +506,11 @@ class FeaturePathType(FeatureType):
 
 
 class FeaturePathSequence(FeatureSequence):
-    def __init__(self, name, paths, seq_length, min_occur=2, value_type=FeaturePathType.VALUE_ENUMERABLE_ONE_HOT, value_fn=None, vocab=None):
+    def __init__(self, name, paths, seq_length, min_occur=2, value_type=VALUE_ENUMERABLE_ONE_HOT, value_fn=None, vocab=None):
         FeatureSequence.__init__(self)
         self._name = name
         self._paths = paths
-        self._seq_length = sequence_length
+        self._seq_length = seq_length
         self._min_occur = min_occur
         self._value_type = value_type
         self._value_fn = value_fn
@@ -518,7 +526,7 @@ class FeaturePathSequence(FeatureSequence):
     def _init_types(self):
         self._types = []
         for i in range(self._seq_length):
-            self._types.append(FeaturePathType(name,
+            self._types.append(FeaturePathType(self._name,
                 self._paths,
                 min_occur=self._min_occur,
                 no_init=True,
@@ -541,13 +549,13 @@ class FeaturePathSequence(FeatureSequence):
     def get_size(self):
         return self._seq_length
 
-    def get_type(self, index)
+    def get_type(self, index):
         return self._types[index]
 
     def init_start(self):
         self._vocab = bidict()
         self._init_type = FeaturePathType(
-            name, 
+            self._name, 
             self._paths, 
             min_occur=self._min_occur, 
             no_init=False, 
@@ -562,7 +570,7 @@ class FeaturePathSequence(FeatureSequence):
 
     def init_end(self):
         self._init_type.init_end()
-        self._types = self._init_types()
+        self._init_types()
         self._init_type = None
 
     def save(self, file_path):
@@ -638,7 +646,7 @@ class FeatureSet:
     def compute(self, datum, start_from=0, v=None):
         if v is None:
             v = np.array(self.get_size())
-
+        start_index = 0
         for i in range(0, len(self._feature_types)):
             if i >= start_from:
                 self._feature_types[i].compute(datum, v, start_index)
@@ -698,7 +706,6 @@ class FeatureSequenceSet:
             for feature_seq in feature_seqs:
                 if feature_seq.get_size() != feature_seqs[0].get_size():
                     raise ValueError("Feature sequences in FeatureSequenceSet must have the same size.")
-            self._init_feature_sets()
  
     def _init_feature_sets(self):
         for i in range(self._feature_seqs[0].get_size()):
@@ -761,6 +768,7 @@ class FeatureSequenceSet:
     def init_end(self, start_from=0):
         for i in range(start_from, len(self._feature_seqs)):
             self._feature_seqs[i].init_end()
+        self._init_feature_sets()
 
     def get_feature_token(self, index, seq_index=0):
         if len(self._feature_sets) == 0:
@@ -771,7 +779,7 @@ class FeatureSequenceSet:
         return self._feature_seqs[index]
 
     def get_feature_set(self, index):
-        return sefl._feature_sets[index]
+        return self._feature_sets[index]
 
     def copy(self):
         return FeatureSequenceSet(feature_seqs=self._feature_seqs)
@@ -861,7 +869,7 @@ class DataFeatureMatrix:
             self._nz_indices[i].extend(nz)
 
     def _compute(self, init_features=True):
-        self._mat = np.zeros((data.get_size(), feature_set.get_size()))
+        self._mat = np.zeros((self._data.get_size(), self._feature_set.get_size()))
         self._nz_indices = []
         
         if init_features:
@@ -875,7 +883,7 @@ class DataFeatureMatrix:
             self._feature_set.compute(self._data.get(i), v=self._mat[i])
 
             nz = []
-            for j in range(feature_set.get_size()):
+            for j in range(self._feature_set.get_size()):
                 if self._mat[i][j] != 0.0:
                     nz.append(j)
             self._nz_indices.append(nz)
@@ -907,6 +915,9 @@ class DataFeatureMatrix:
         mat_path = join(dir_path, "mat")
         feats_dir = join(dir_path, "feats")
         
+        if not os.path.exists(feats_dir):
+            os.makedirs(feats_dir)
+
         info = dict()
         info["data_dir"] = self._data.get_directory()
         info["id_key"] = self._data.get_id_key()        
@@ -938,7 +949,7 @@ class DataFeatureMatrixSequence:
         self._data = data
         self._feature_seq_set = feature_seq_set
         self._dfmats = []
-        if dfmats is None:
+        if mats is None:
             self._compute()
         else:
             for mat in mats:
@@ -1007,6 +1018,11 @@ class DataFeatureMatrixSequence:
         mats_dir = join(dir_path, "mats")
         feats_dir = join(dir_path, "feats")
 
+        if not os.path.exists(mats_dir):
+            os.makedirs(mats_dir)
+        if not os.path.exists(feats_dir):
+            os.makedirs(feats_dir)
+
         info = dict()
         info["data_dir"] = self._data.get_directory()
         info["id_key"] = self._data.get_id_key()
@@ -1016,7 +1032,7 @@ class DataFeatureMatrixSequence:
 
         self._feature_seq_set.save(feats_dir)
         for i in range(len(self._dfmats)):
-            np.save(join(mats_dir, str(i)), dfmat.get_matrix())
+            np.save(join(mats_dir, str(i)), self._dfmats[i].get_matrix())
 
     @staticmethod
     def load(dir_path):
