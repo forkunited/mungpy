@@ -160,6 +160,9 @@ class DataSet:
             datas.append(DataSet(data=part_data))
         return datas
 
+    def partition(self, partition, key_fn):
+        return partition.split(self, key_fn)
+
     def save(self, data_dir, batch=1000):
         if batch is None:
             self._source_dir = data_dir
@@ -184,7 +187,7 @@ class DataSet:
                     json.dump({ "batch" : cur_batch }, fp)
 
     @staticmethod
-    def load(data_dir, id_key="id"):
+    def load(data_dir, id_key="id", order=None):
         D = DataSet(id_key=id_key, source_dir=data_dir)
         files = [join(data_dir, f) for f in listdir(data_dir) if isfile(join(data_dir, f)) and f != "batch"]
 
@@ -198,8 +201,70 @@ class DataSet:
                     for properties in D_sub["batch"]:
                         D._data.append(Datum(properties=properties, id_key=id_key))
 
-        D.shuffle() # Ensure deterministic order if random seeded
+        if order is None:
+            D.shuffle() # Ensure deterministic order if random seeded
+        else:
+            if len(D._data) != len(order):
+                raise ValueError("Size of ordering for data must match data size")
+            keys_to_indices = dict()
+            for i in range(len(D._data)):
+                keys_to_indices[D._data[i].get_id()] = i
+            ordered_data = [D._data[keys_to_indices[order[i]]] for i in range(len(order))]
+            D._data = ordered_data
+
         print "Loaded data of size " + str(D.get_size()) + "."
         return D
-        
 
+class Partition:
+    def __init__(self):
+        self._keep_data = False
+        self._size = 0
+        self._parts = dict()
+
+    def get_size(self):
+        return self._size
+
+    def has_data(self):
+        return self._keep_data
+
+    def split(self, data, key_fn):
+        split_data = dict()
+        for i in range(data.get_size()):
+            key = key_fn(data.get(i))
+            for part_name in self._parts:
+                if key in self._parts[part_name]:
+                    if part_name not in split_data:
+                        split_data[part_name] = []
+                    split_data[part_name].append(data.get(i))
+
+        for key, data in split_data.iteritems():
+            split_data[key] = DataSet(data=data)
+        
+        return split_data            
+
+    def get_part_names(self):
+        return self._parts.keys()
+
+    def get_part(self, name):
+        return self._parts[name]
+
+    def part_contains(self, name, value):
+        return name in self._parts and value in self._parts[name]
+
+    def save(self, file_path):
+        with open(file_path, 'w') as fp:
+            obj = dict()
+            obj["keep_data"] = self._keep_data
+            obj["size"] = self._size
+            obj["parts"] = self._parts
+            json.dump(obj, fp)
+
+    @staticmethod
+    def load(file_path):
+        P = Partition()
+        with open(file_path, 'r') as fp:
+            obj = json.load(fp)
+            P._keep_data = obj["keep_data"]
+            P._size = obj["size"]
+            P._parts = obj["parts"]
+        return P
