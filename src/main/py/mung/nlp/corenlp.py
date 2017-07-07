@@ -3,8 +3,6 @@ from pycorenlp import StanfordCoreNLP
 STANFORD_NLP_PORT = 9000
 
 class CoreNLPAnnotator(Annotator)
-    __metaclass__ = abc.ABCMeta
-
     def __init__(self, target_path, target_key, store_key):
         Annotator.__init__(self, target_path, target_key, store_key)
         self._nlp = StanfordCoreNLP('http://localhost:{}'.format(STANFORD_NLP_PORT))
@@ -20,7 +18,6 @@ class CoreNLPAnnotator(Annotator)
             obj = Annotations(tokens=annos["words"], pos=annos["pos"], lemmas=annos["lemmas"]).to_dict()
             datum.set(self._store_key, obj, path=target_path)
             return datum
-
 
     # Borrowed from https://github.com/futurulus/coop-nets/blob/master/behavioralAnalysis/tagPOS.ipynb
     def _annotate_text(self, text):
