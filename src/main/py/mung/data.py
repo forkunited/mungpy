@@ -31,7 +31,7 @@ class Datum:
         return len([match.value for match in Datum.parse_path(path).find(self._properties)]) > 0
 
     def get(self, path, first=True, include_paths=False):
-        # FIXME: This should handle reference datums 
+        # FIXME: This should handle reference datums
         # at some point
         path_values = [(str(match.full_path), match.value) for match in Datum.parse_path(path).find(self._properties)]
         if first:
@@ -47,7 +47,7 @@ class Datum:
                 return path_values
             else:
                 return [path_value[1] for path_value in path_values]
- 
+
     def get_mutable(self):
         return MutableDatum(properties=copy.deepcopy(self._properties), id_key=self._id_key)
 
@@ -79,7 +79,7 @@ class Datum:
         if not cache:
             return parse(path_json)
         if path_json not in JSON_PATH_CACHE:
-            JSON_PATH_CACHE[path_json] = parse(path_json)        
+            JSON_PATH_CACHE[path_json] = parse(path_json)
         return JSON_PATH_CACHE[path_json]
 
 
@@ -169,37 +169,33 @@ class DataSet:
             for datum in self._data:
                 datum.save(data_dir)
         else:
-            with open(join(data_dir, "batch"), 'w') as fp:
-                json.dump({ "batch_size" : batch }, fp)
-            
             cur_batch = []
             i = 0
             for datum in self._data:
                 cur_batch.append(datum.to_dict())
                 if len(cur_batch) == batch:
                     with open(join(data_dir, str(i)), 'w') as fp:
-                        json.dump({ "batch" : cur_batch }, fp)
+                        for datum_dict in cur_batch:
+                            fp.write(json.dumps(datum_dict) + "\n")
                     i += 1
                     cur_batch = []
 
             if len(cur_batch) > 0:
                 with open(join(data_dir, str(i)), 'w') as fp:
-                    json.dump({ "batch" : cur_batch }, fp)
+                    for datum_dict in cur_batch:
+                        fp.write(json.dumps(datum_dict) + "\n")
 
     @staticmethod
     def load(data_dir, id_key="id", order=None):
         D = DataSet(id_key=id_key, source_dir=data_dir)
-        files = [join(data_dir, f) for f in listdir(data_dir) if isfile(join(data_dir, f)) and f != "batch"]
+        files = [join(data_dir, f) for f in listdir(data_dir) if isfile(join(data_dir, f))]
 
-        if not os.path.isfile(join(data_dir, "batch")):
-            for f in files:
-                D._data.append(Datum.load(f, id_key=id_key))
-        else:
-            for f in files:
-                with open(f, 'r') as fp:
-                    D_sub = json.load(fp)
-                    for properties in D_sub["batch"]:
-                        D._data.append(Datum(properties=properties, id_key=id_key))
+        for f in files:
+            with open(f, 'r') as fp:
+                json_strs = fp.readlines()
+                for json_str in json_strs:
+                    D._data.append(Datum(properties=json.loads(json_str.strip()),
+                                         id_key=id_key))
 
         if order is None:
             D.shuffle() # Ensure deterministic order if random seeded
@@ -239,8 +235,8 @@ class Partition:
 
         for key, data in split_data.iteritems():
             split_data[key] = DataSet(data=data)
-        
-        return split_data            
+
+        return split_data
 
     def get_part_names(self):
         return self._parts.keys()
