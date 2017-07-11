@@ -11,7 +11,8 @@ from os.path import join
 
 class ValueType:
     ENUMERABLE_ONE_HOT = 0
-    SCALAR = 1
+    ENUMERABLE_INDEX = 1
+    SCALAR = 2
 
 class Symbol:
     SEQ_START = "SYM_START"
@@ -51,6 +52,9 @@ class FeatureType(object):
 
     def __init__(self):
         pass
+
+    def get_token_count(self):
+        return self.-get_size()
 
     @abc.abstractmethod
     def get_name(self):
@@ -105,7 +109,11 @@ class FeatureSequence(object):
 
     @abc.abstractmethod
     def get_size(self):
-        """ Returns the length of the feature sequence """
+        """ Returns the padded length of the feature sequence """
+
+    @abc.abstractmethod
+    def get_datum_length(self, datum):
+        """ Returns the unpadded length of the datum feature sequence """
 
     @abc.abstractmethod
     def get_type(self, index):
@@ -234,6 +242,9 @@ class FeatureMatrixSequence(FeatureSequence):
             return False
         return True
 
+    def get_datum_length(self, datum):
+        raise NotImplementedError()
+
     def get_name(self):
         return self._name
 
@@ -290,6 +301,9 @@ class FeaturePathToken(FeatureToken):
     def get_name(self):
         return self._name
 
+    def get(self):
+        return self._token
+
     def init_start(self):
         pass
 
@@ -313,6 +327,16 @@ class FeaturePathType(FeatureType):
 
         self._counter = None
         self._vocab = vocab
+
+    def get_datum_length(self, datum):
+        if self._seq_index is None:
+            return 0
+
+        seq = self._get_path_values(datum)
+        for i in range(len(seq))
+            if len(seq[i]) == 0:
+                return i
+        return len(seq)
 
     # Map (path -> values) to (key, value) list list
     # representing a sequence of mappings or (key, value) list
@@ -386,23 +410,34 @@ class FeaturePathType(FeatureType):
         path_values = self._get_path_values(datum)
         if self._seq_index is not None:
             path_values = path_values[self._seq_index]
+            if len(path_values) >= self._seq_index:
+                return vec
         for path_value in path_values:
             index = None
             value = None
             if self._value_type == ValueType.SCALAR:
                 index = self._vocab[path_value[0]]
-                value = path_value[1]
+                vec[start_index + index] = path_value[1]
             else:
                 key = path_value[0] + "_" + path_value[1]
                 if key in self._vocab:
                     index = self._vocab[key]
                 else:
                     index = self._vocab[path_value[0] + "_" + Symbol.SEQ_UNC]
-                value = 1.0
-            vec[start_index + index] = value
+
+                if self._value_type == ValueType.ENUMERABLE_INDEX:
+                    vec[start_index] = index
+                else:
+                    vec[start_index + index] = 1.0
+
+    def get_token_count(self):
+        return len(self._vocab)
 
     def get_size(self):
-        return len(self._vocab)
+        if self._value_type == ValueType.ENUMERABLE_INDEX:
+            return 1
+        else:
+            return len(self._vocab)
 
     def get_token(self, index):
         return FeaturePathToken(self._name, index, self._vocab.inv[index])
@@ -570,6 +605,9 @@ class FeaturePathSequence(FeatureSequence):
 
     def get_size(self):
         return self._seq_length
+
+    def get_datum_length(self, datum):
+        return self._types[len(self._types) - 1].get_datum_length(datum)
 
     def get_type(self, index):
         return self._types[index]
@@ -746,6 +784,12 @@ class FeatureSequenceSet:
             feature_set = FeatureSet(feature_types=[feature_seq.get_type(i) for feature_seq in self._feature_seqs])
             self._feature_sets.append(feature_set)
 
+    def get_datum_max_length(self, datum):
+        max_len = 0
+        for feature_seq in self._feature_seqs:
+            max_len = max(max_len, feature_seq.get_datum_length(datum))
+        return max_len
+
     def has_feature_seq(self, feature_seq):
         for f in self._feature_seqs:
             if f == feature_seq:
@@ -874,10 +918,23 @@ class DataFeatureMatrix:
         return self._mat[i]
 
     def get_batch(self, i, size):
+        if size > self.get_size():
+            raise ValueError("Batch size cannot be greater than data set size")
         return self._mat[i*size:(i+1)*size]
 
     def get_num_batches(self, size):
+        if size > self.get_size():
+            raise ValueError("Batch size cannot be greater than data set size")
         return self._data.get_size() // size
+
+    def get_random_batch(self, size):
+        if size > self.get_size():
+            raise ValueError("Batch size cannot be greater than data set size")
+        batch_indices = np.random(self.get_size(), size, replace=False)
+        return self._mat[batch_indices]
+
+    def get_batch_by_indices(self, batch_indices):
+        return self._mat[batch_indices]
 
     def get_non_zero_indices(self, i):
         if self._compute_nz:
@@ -982,8 +1039,13 @@ class DataFeatureMatrix:
         mat_path = join(dir_path, "mat")
         feats_dir = join(dir_path, "feats")
 
+        if not os.path.exists(dir_path):
+            os.makedirs(dir_path)
+
         if not os.path.exists(feats_dir):
             os.makedirs(feats_dir)
+        else:
+            raise ValueError(feats_dir + " already exists... overwrite may be unsafe.  Delete manually.")
 
         data_order = [self._data.get(i).get(self._data.get_id_key()) for i in range(self._data.get_size())]
 
@@ -1026,18 +1088,25 @@ class DataFeatureMatrix:
 
 
 class DataFeatureMatrixSequence:
-    def __init__(self, data, feature_seq_set, init_features=True, mats=None):
+    def __init__(self, data, feature_seq_set, init_features=True, mats=None, lengths=None):
         self._data = data
         self._feature_seq_set = feature_seq_set
         self._dfmats = []
+        self._lengths = lengths
+
         if mats is None:
             self._compute(init_features=init_features)
         else:
+            if lengths is None:
+                raise ValueError("If mats is supplied, then lengths must also be supplied.")
             for mat in mats:
                 self._dfmats.append(DataFeatureMatrix(data, self._feature_seq_set.get_feature_set(i), init_features=False, mat=mat))
 
     def get_data(self):
         return self._data
+
+    def get_lengths_by_indices(self, indices):
+        return self._lengths[indices]
 
     def get_feature_seq_set(self):
         return self._feature_seq_set
@@ -1048,11 +1117,39 @@ class DataFeatureMatrixSequence:
     def get_vector(self, seq_i, data_i):
         return self._dfmats[seq_i].get_vector(data_i)
 
-    def get_batch(self, seq_i, batch_i, size):
-        return self._dfmats[seq_i].get_batch(batch_i, size)
+    # NOTE: These batch functions can probably be sped up quite a bit if necessary
+    def get_random_batch(self, size, sort_lengths=True):
+        if size > self._data.get_size():
+            raise ValueError("Batch size cannot be greater than data set size")
+        batch_indices = np.random(self.get_size(), size, replace=False)
+        return self.get_batch_by_indices(batch_indices, sort_lengths=sort_lengths)
+
+    def get_batch(self, batch_i, size, sort_lengths=True):
+        if size > self._data.get_size():
+            raise ValueError("Batch size cannot be greater than data set size")
+        return self.get_batch_by_indices(batch_i*size:(batch_i+1)*size, sort_lengths=sort_lengths)
 
     def get_num_batches(self, size):
+        if size > self._data.get_size():
+            raise ValueError("Batch size cannot be greater than data set size")
         return self._data.get_size() // size
+
+    def get_batch_by_indices(self, batch_indices, sort_lengths=True):
+        batch = np.array(shape=(len(self._dfmats),
+                                size,
+                                self._dfmats[0].get_feature_set().get_size()))
+
+        lengths = self._lengths[batch_indices]
+        if sort_lengths:
+            bls = [(batch_indices, lengths) for (batch_indices,lengths)
+                    in sorted(zip(batch_indices, lengths), key=lambda p: -p[1])]
+            batch_indices = np.array([bl[0] for bl in bls])
+            lengths = np.array([bl[1] for bl in bls])
+
+        for i in range(len(self._dfmats)):
+            batch[i] = self._dfmats[i].get_batch_by_indices(batch_indices)
+
+        return batch, lengths
 
     def extend(self, feature_seqs):
         start_num = self._feature_seq_set.get_num_feature_seqs()
@@ -1067,6 +1164,10 @@ class DataFeatureMatrixSequence:
             self._feature_seq_set.init_datum(self._data.get(i), start_from=start_num)
         self._feature_seq_set.init_end(start_from=start_num)
 
+        self._lengths = np.array(data.get_size())
+        for i in range(self._data.get_size()):
+            self._lengths[i] = self._feature_seq_set.get_datum_max_length(self._data.get(i))
+
         for i in range(self._feature_seq_set.get_size()):
             feature_set = self._feature_seq_seq.get_feature_set(i)
             feature_set.extend(feature_seqs, start_num=start_num, start_size=start_size)
@@ -1077,6 +1178,10 @@ class DataFeatureMatrixSequence:
             for i in range(self._data.get_size()):
                 self._feature_seq_set.init_datum(self._data.get(i))
             self._feature_seq_set.init_end()
+
+        self._lengths = np.array(data.get_size())
+        for i in range(self._data.get_size()):
+            self._lengths[i] = self._feature_seq_set.get_datum_max_length(self._data.get(i))
 
         for i in range(self._feature_seq_set.get_size()):
             feature_set = self._feature_seq_set.get_feature_set(i)
@@ -1089,11 +1194,17 @@ class DataFeatureMatrixSequence:
     def reorder(self, perm, preordered_data=None):
         if preordered_data is None:
             shuffled_data = []
+            shuffled_lengths = []
             for i in range(len(perm)):
                 shuffled_data.append(self._data.get(perm[i]))
+                shuffled_lengths.append(self._lengths[perm[i]])
             self._data = DataSet(data=shuffled_data)
+            self._lengths = np.array(shuffled_lengths)
         else:
             self._data = preordered_data
+            self._lengths = np.array(data.get_size())
+            for i in range(self._data.get_size()):
+                self._lengths[i] = self._feature_seq_set.get_datum_max_length(self._data.get(i))
 
         for dfmat in self._dfmats:
             dfmat.reorder(perm, preordered_data=self._data)
@@ -1124,6 +1235,12 @@ class DataFeatureMatrixSequence:
         mats_dir = join(dir_path, "mats")
         feats_dir = join(dir_path, "feats")
 
+        if not os.path.exists(dir_path):
+            os.makedirs(dir_path)
+
+        if os.path.exists(mats_dir) or os.path.exists(feats_dir):
+            raise ValueError(mats_dir + " or " + feats_dir " already exists... overwrite may be unsafe.  Delete manually.")
+
         if not os.path.exists(mats_dir):
             os.makedirs(mats_dir)
         if not os.path.exists(feats_dir):
@@ -1136,6 +1253,8 @@ class DataFeatureMatrixSequence:
         info["id_key"] = self._data.get_id_key()
         info["size"] = len(self._dfmats)
         info["data_order"] = data_order
+        info["lengths"] = list(self._lengths)
+
         with open(info_path, 'w') as fp:
             json.dump(info, fp)
 
@@ -1159,16 +1278,17 @@ class DataFeatureMatrixSequence:
             with open(info_path, 'r') as fp:
                 obj = json.load(fp)
                 data = DataSet.load(obj["data_dir"], id_key=obj["id_key"], order=obj["data_order"])
-            return DataFeatureMatrixSequence(data, feature_seq_set, mats=mats)
+            return DataFeatureMatrixSequence(data, feature_seq_set, mats=mats, lengths=np.array(obj["lengths"]))
         else:
             mat_id_to_index = dict()
             for i in range(len(obj["data_order"])):
                 mat_id_to_index[obj["data_order"]] = i
             # Perm : target index (data) -> source index (original mat)
             perm = [mat_id_to_index[data.get(i).get_id()] for i in range(data.get_size())]
-            dfmats = DataFeatureMatrixSequence(data, feature_seq_set, mats=mats)
+            dfmats = DataFeatureMatrixSequence(data, feature_seq_set, mats=mats, lengths=np.array(obj["lengths"]))
             dfmats.reorder(preordered_data=data)
             return dfmats
+
 
 class MultiviewDataSet:
     def __init__(self):
@@ -1205,6 +1325,47 @@ class MultiviewDataSet:
 
         return mv_parts
 
+    def get_random_batch(self, size, sort_lengths=True, mat_views=None, seq_views=None):
+        if size > self._data.get_size():
+            raise ValueError("Batch size cannot be greater than data set size")
+        batch_indices = np.random(self.get_size(), size, replace=False)
+        return self.get_batch_by_indices(batch_indices, sort_lengths=sort_lengths, mat_views=mat_views, seq_views=seq_views)
+
+    def get_batch(self, batch_i, size, sort_lengths=True, mat_views=None, seq_views=None):
+        if size > self._data.get_size():
+            raise ValueError("Batch size cannot be greater than data set size")
+        return self.get_batch_by_indices(batch_i*size:(batch_i+1)*size, sort_lengths=sort_lengths, mat_views=mat_views, seq_views=seq_views)
+
+    def get_num_batches(self, size):
+        if size > self._data.get_size():
+            raise ValueError("Batch size cannot be greater than data set size")
+        return self._data.get_size() // size
+
+    def get_batch_by_indices(self, batch_indices, sort_lengths=True, mat_views=None, seq_views=None):
+        if mat_views is None:
+            mat_views = self._dfmats.keys()
+        if seq_views is None:
+            seq_views = self._dfmatseqs.keys()
+
+        batch = np.array(shape=(len(self._dfmats),
+                                size,
+                                self._dfmats[0].get_feature_set().get_size()))
+
+        # NOTE: Batches are sorted on the lengths of the first seq_view
+        if sort_lengths and len(seq_views)
+            lengths = self._dfmatseqs[seq_views[0]].get_lengths_by_indices(batch_indices)
+            bls = [(batch_indices, lengths) for (batch_indices,lengths)
+                    in sorted(zip(batch_indices, lengths), key=lambda p: -p[1])]
+            batch_indices = np.array([bl[0] for bl in bls])
+
+        batch_dict = dict()
+        for mat_view in mat_views:
+            batch_dict[mat_view] = self._dfmats[mat_view].get_batch_by_indices(batch_indices)
+
+        for seq_view in seq_views:
+            batch_dict[seq_view] = self._dfmatseqs[seq_view].get_batch_by_indices(batch_indices, sort_lengths=False)
+
+        return batch_dict
 
     @staticmethod
     def load(data_path, dfmat_paths=dict(), dfmatseq_paths=dict()):

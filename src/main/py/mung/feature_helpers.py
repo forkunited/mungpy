@@ -3,13 +3,17 @@ from mung.feature import FeaturePathSequence, FeatureSequenceSet, DataFeatureMat
 
 def featurize_path_enum_seqs(input_data_dir, output_feature_dir, partition_file,
                              partition_fn, feature_name, paths, max_length,
-                             init_data="train", token_fn=None):
+                             init_data="train", token_fn=None, indices=False):
     partition = Partition.load(partition_file)
     data_full = DataSet.load(input_data_dir)
     data_parts = data_full.partition(partition, partition_fn)
 
+    value_type = ValueType.ENUMERABLE_ONE_HOT
+    if indices:
+        value_type = ValueType.ENUMERABLE_INDEX
+
     feat_seq = FeaturePathSequence(feature_name, paths, max_length, min_occur=2,
-                                   token_fn=token_fn)
+                                   token_fn=token_fn, value_type=value_type)
     feat_seq_set = FeatureSequenceSet(feature_seqs=[feat_seq])
     feat_seq_set.init(data_parts[init_data])
 
