@@ -7,7 +7,8 @@ from mung import data
 from mung.data import DataSet
 from bidict import bidict
 from collections import Counter
-from os.path import join
+from os.path import join, isfile
+from os import listdir
 
 class ValueType:
     ENUMERABLE_ONE_HOT = 0
@@ -54,7 +55,7 @@ class FeatureType(object):
         pass
 
     def get_token_count(self):
-        return self.-get_size()
+        return self.get_size()
 
     @abc.abstractmethod
     def get_name(self):
@@ -271,12 +272,12 @@ class FeatureMatrixSequence(FeatureSequence):
         obj["sequence_length"] = self._sequence_length
         obj["feature_size"] = self._feature_size
         with open(file_path, 'w') as fp:
-            json.dump(obj, fp)
+            pickle.dump(obj, fp)
 
     @staticmethod
     def load(file_path):
         with open(file_path, 'r') as fp:
-            obj = json.load(fp)
+            obj = pickle.load(fp)
             return FeatureMatrixSequence.from_dict(obj)
 
     @staticmethod
@@ -333,7 +334,7 @@ class FeaturePathType(FeatureType):
             return 0
 
         seq = self._get_path_values(datum)
-        for i in range(len(seq))
+        for i in range(len(seq)):
             if len(seq[i]) == 0:
                 return i
         return len(seq)
@@ -392,6 +393,7 @@ class FeaturePathType(FeatureType):
                 values = [el for el in value for value in values]
             for i in range(len(values)):
                 mapping.append((path + "_" + str(i), token_fn(values[i])))
+        return mapping
 
     # Get sequence of (key -> value) mappings represented as
     # (key,value) lists or just a single (key, value) list if
@@ -667,10 +669,10 @@ class FeaturePathSequence(FeatureSequence):
         value_type = obj["value_type"]
         value_fn = None
         if "value_fn" in obj:
-            value_fn = pickle.loads(self._value_fn)
+            value_fn = pickle.loads(obj["value_fn"])
         token_fn = None
         if "token_fn" in obj:
-            token_fn = pickle.loads(self._token_fn)
+            token_fn = pickle.loads(obj["token_fn"])
         vocab = None
         if "vocab" in obj:
             vocab = bidict(obj["vocab"])
@@ -680,7 +682,6 @@ class FeaturePathSequence(FeatureSequence):
 class FeatureSet:
     def __init__(self, feature_types=[]):
         self._feature_types = list(feature_types)
-        self._size = sum([feature_type.get_size() for feature_type in feature_types])
 
     def has_feature_type(self, feature_type):
         for f in self._feature_types:
@@ -692,7 +693,6 @@ class FeatureSet:
         if self.has_feature_type(feature_type):
             return False
         self._feature_types.append(feature_type)
-        self._size += feature_type.get_size()
         return True
 
     def add_feature_types(self, feature_types):
@@ -704,7 +704,7 @@ class FeatureSet:
         return ret
 
     def get_size(self):
-        return self._size
+        return sum([feature_type.get_size() for feature_type in self._feature_types])
 
     def get_token_count(self):
         token_count = 0
@@ -768,7 +768,7 @@ class FeatureSet:
         feature_types = []
         for file_path in file_paths:
             with open(file_path, 'r') as fp:
-                obj = json.load(fp)
+                obj = pickle.load(fp)
                 if obj["type"] == "FeaturePathType":
                     feature_types.append(FeaturePathType.from_dict(obj))
                 elif obj["type"] == "FeatureMatrixType":
@@ -784,8 +784,10 @@ class FeatureSequenceSet:
             for feature_seq in feature_seqs:
                 if feature_seq.get_size() != feature_seqs[0].get_size():
                     raise ValueError("Feature sequences in FeatureSequenceSet must have the same size.")
+        self._init_feature_sets()
 
     def _init_feature_sets(self):
+        self._feature_sets = []
         for i in range(self._feature_seqs[0].get_size()):
             feature_set = FeatureSet(feature_types=[feature_seq.get_type(i) for feature_seq in self._feature_seqs])
             self._feature_sets.append(feature_set)
@@ -884,7 +886,7 @@ class FeatureSequenceSet:
         feature_seqs = []
         for file_path in file_paths:
             with open(file_path, 'r') as fp:
-                obj = json.load(fp)
+                obj = pickle.load(fp)
                 if obj["type"] == "FeaturePathSequence":
                     feature_seqs.append(FeaturePathSequence.from_dict(obj))
                 elif obj["type"] == "FeatureMatrixSequence":
@@ -1004,7 +1006,7 @@ class DataFeatureMatrix:
         self.reorder(perm)
 
     def reorder(self, perm, preordered_data=None):
-        shuffled_mat = np.zeros(self._mat.shape())
+        shuffled_mat = np.zeros(self._mat.shape)
         shuffled_nz = []
         shuffled_data = []
         for i in range(len(perm)):
@@ -1051,7 +1053,7 @@ class DataFeatureMatrix:
         if not os.path.exists(feats_dir):
             os.makedirs(feats_dir)
         else:
-            raise ValueError(feats_dir + " already exists... overwrite may be unsafe.  Delete manually.")
+            print("Warning: " + feats_dir + " already exists... overwrite may be unsafe.  Delete manually.")
 
         data_order = [self._data.get(i).get(self._data.get_id_key()) for i in range(self._data.get_size())]
 
@@ -1070,21 +1072,23 @@ class DataFeatureMatrix:
     @staticmethod
     def load(dir_path, data=None):
         info_path = join(dir_path, "info")
-        mat_path = join(dir_path, "mat")
+        mat_path = join(dir_path, "mat.npy")
         feats_dir = join(dir_path, "feats")
 
         mat = np.load(mat_path)
         feature_set = FeatureSet.load(feats_dir)
 
+        obj = None
+        with open(info_path, 'r') as fp:
+            obj = json.load(fp)
+
         if data is None:
-            with open(info_path, 'r') as fp:
-                obj = json.load(fp)
-                data = DataSet.load(obj["data_dir"], id_key=obj["id_key"], order=obj["data_order"])
+            data = DataSet.load(obj["data_dir"], id_key=obj["id_key"], order=obj["data_order"])
             return DataFeatureMatrix(data, feature_set, init_features=False, mat=mat, compute_non_zero=obj["compute_nz"])
         else:
             mat_id_to_index = dict()
             for i in range(len(obj["data_order"])):
-                mat_id_to_index[obj["data_order"]] = i
+                mat_id_to_index[obj["data_order"][i]] = i
             # Perm : target index (data) -> source index (original mat)
             perm = [mat_id_to_index[data.get(i).get_id()] for i in range(data.get_size())]
 
@@ -1106,8 +1110,8 @@ class DataFeatureMatrixSequence:
         else:
             if lengths is None or mask is None:
                 raise ValueError("If mats is supplied, then lengths and mask must also be supplied.")
-            for mat in mats:
-                self._dfmats.append(DataFeatureMatrix(data, self._feature_seq_set.get_feature_set(i), init_features=False, mat=mat))
+            for i in range(len(mats)):
+                self._dfmats.append(DataFeatureMatrix(data, self._feature_seq_set.get_feature_set(i), init_features=False, mat=mats[i]))
 
     def get_data(self):
         return self._data
@@ -1134,7 +1138,7 @@ class DataFeatureMatrixSequence:
     def get_batch(self, batch_i, size, sort_lengths=True):
         if size > self._data.get_size():
             raise ValueError("Batch size cannot be greater than data set size")
-        return self.get_batch_by_indices(batch_i*size:(batch_i+1)*size, sort_lengths=sort_lengths)
+        return self.get_batch_by_indices(np.array(range(batch_i*size,(batch_i+1)*size)), sort_lengths=sort_lengths)
 
     def get_num_batches(self, size):
         if size > self._data.get_size():
@@ -1190,11 +1194,11 @@ class DataFeatureMatrixSequence:
                 self._feature_seq_set.init_datum(self._data.get(i))
             self._feature_seq_set.init_end()
 
-        self._lengths = np.zeros(shape=(data.get_size()))
-        self._mask = np.zeros(shape=(data.get_size(), self.get_size()))
+        self._lengths = np.zeros(shape=(self._data.get_size()))
+        self._mask = np.zeros(shape=(self._data.get_size(), self._feature_seq_set.get_size()))
         for i in range(self._data.get_size()):
             self._lengths[i] = self._feature_seq_set.get_datum_max_length(self._data.get(i))
-            self._mask[i] = repeat([1,0],[self._lengths[i], self.get_size()-self._lengths[i]])
+            self._mask[i] = np.repeat([1,0],[self._lengths[i], self._feature_seq_set.get_size()-self._lengths[i]])
 
         for i in range(self._feature_seq_set.get_size()):
             feature_set = self._feature_seq_set.get_feature_set(i)
@@ -1218,11 +1222,11 @@ class DataFeatureMatrixSequence:
             self._mask = shuffled_mask
         else:
             self._data = preordered_data
-            self._lengths = np.zeros(shape=(data.get_size()))
-            self._mask = np.zeros(shape=(data.get_size(), self.get_size()))
+            self._lengths = np.zeros(shape=(self._data.get_size()))
+            self._mask = np.zeros(shape=(self._data.get_size(), self._feature_seq_set.get_size()))
             for i in range(self._data.get_size()):
                 self._lengths[i] = self._feature_seq_set.get_datum_max_length(self._data.get(i))
-                self._mask[i] = repeat([1,0],[self._lengths[i], self.get_size()-self._lengths[i]])
+                self._mask[i] = np.repeat([1,0],[self._lengths[i], self._feature_seq_set.get_size()-self._lengths[i]])
 
         for dfmat in self._dfmats:
             dfmat.reorder(perm, preordered_data=self._data)
@@ -1240,16 +1244,16 @@ class DataFeatureMatrixSequence:
         dfmats_parts = dict()
 
         for key, data_part in data_parts.iteritems():
-            mats_part = [np.zeros(shape=(data_part.get_size(), self._feature_set.get_size())) for i in range(self.get_size())]
+            mats_part = [np.zeros(shape=(data_part.get_size(), self._feature_seq_set.get_feature_set(0).get_size())) for i in range(self._feature_seq_set.get_size())]
             part_indices = np.array([id_to_index[data_part.get(i).get_id()] for i in range(data_part.get_size())])
             lengths_part = self._lengths[part_indices]
             mask_part = self._mask[part_indices]
-            for s in range(self.get_size()):
+            for s in range(self._feature_seq_set.get_size()):
                 for i in range(data_part.get_size()):
                     mats_part[s][i] = self._dfmats[s].get_matrix()[id_to_index[data_part.get(i).get_id()]]
             dfmats_parts[key] = DataFeatureMatrixSequence(data_part, self._feature_seq_set, mats=mats_part, lengths=lengths_part, mask=mask_part)
 
-        return dfmat_parts
+        return dfmats_parts
 
     def save(self, dir_path):
         info_path = join(dir_path, "info")
@@ -1261,7 +1265,7 @@ class DataFeatureMatrixSequence:
             os.makedirs(dir_path)
 
         if os.path.exists(mats_dir) or os.path.exists(feats_dir):
-            raise ValueError(mats_dir + " or " + feats_dir " already exists... overwrite may be unsafe.  Delete manually.")
+            print("Warning: " + mats_dir + " or " + feats_dir + " already exists... overwrite may be unsafe.  Delete manually.")
 
         if not os.path.exists(mats_dir):
             os.makedirs(mats_dir)
@@ -1291,27 +1295,29 @@ class DataFeatureMatrixSequence:
         info_path = join(dir_path, "info")
         mats_path = join(dir_path, "mats")
         feats_dir = join(dir_path, "feats")
-        mask_path = join(dir_path, "mask")
+        mask_path = join(dir_path, "mask.npy")
 
-        feature_set = FeatureSequenceSet.load(feats_dir)
+        feature_seq_set = FeatureSequenceSet.load(feats_dir)
+
+        obj = None
+        with open(info_path, 'r') as fp:
+            obj = json.load(fp)
 
         mats = []
         for i in range(obj["size"]):
-            mats.append(np.load(join(mats_path, str(i))))
+            mats.append(np.load(join(mats_path, str(i) + ".npy")))
 
         if data is None:
-            with open(info_path, 'r') as fp:
-                obj = json.load(fp)
-                data = DataSet.load(obj["data_dir"], id_key=obj["id_key"], order=obj["data_order"])
+            data = DataSet.load(obj["data_dir"], id_key=obj["id_key"], order=obj["data_order"])
             return DataFeatureMatrixSequence(data, feature_seq_set, mats=mats, lengths=np.array(obj["lengths"]), mask=np.load(mask_path))
         else:
             mat_id_to_index = dict()
             for i in range(len(obj["data_order"])):
-                mat_id_to_index[obj["data_order"]] = i
+                mat_id_to_index[obj["data_order"][i]] = i
             # Perm : target index (data) -> source index (original mat)
             perm = [mat_id_to_index[data.get(i).get_id()] for i in range(data.get_size())]
             dfmats = DataFeatureMatrixSequence(data, feature_seq_set, mats=mats, lengths=np.array(obj["lengths"]), mask=np.load(mask_path))
-            dfmats.reorder(preordered_data=data)
+            dfmats.reorder(perm, preordered_data=data)
             return dfmats
 
 
@@ -1338,15 +1344,15 @@ class MultiviewDataSet:
         for key in data_parts.keys():
             mv_parts[key] = MultiviewDataSet()
 
-        for name, dfmat in self._dfmats:
+        for name, dfmat in self._dfmats.iteritems():
             dfmat_parts = dfmat._data_partition(data_parts, id_to_index, key_fn)
             for key, dfmat_part in dfmat_parts.iteritems():
                 mv_parts[key]._dfmats[name] = dfmat_part
 
-        for name, dfmatseq in self._dfmatseqs:
+        for name, dfmatseq in self._dfmatseqs.iteritems():
             dfmatseq_parts = dfmatseq._data_partition(data_parts, id_to_index, key_fn)
             for key, dfmatseq_part in dfmatseq_parts.iteritems():
-                mv_parts[key]._dfmatseq[name] = dfmatseq_part
+                mv_parts[key]._dfmatseqs[name] = dfmatseq_part
 
         return mv_parts
 
@@ -1359,7 +1365,7 @@ class MultiviewDataSet:
     def get_batch(self, batch_i, size, sort_lengths=True, mat_views=None, seq_views=None):
         if size > self._data.get_size():
             raise ValueError("Batch size cannot be greater than data set size")
-        return self.get_batch_by_indices(batch_i*size:(batch_i+1)*size, sort_lengths=sort_lengths, mat_views=mat_views, seq_views=seq_views)
+        return self.get_batch_by_indices(np.array(range(batch_i*size, (batch_i+1)*size)), sort_lengths=sort_lengths, mat_views=mat_views, seq_views=seq_views)
 
     def get_num_batches(self, size):
         if size > self._data.get_size():
@@ -1377,7 +1383,7 @@ class MultiviewDataSet:
                                 self._dfmats[0].get_feature_set().get_size()))
 
         # NOTE: Batches are sorted on the lengths of the first seq_view
-        if sort_lengths and len(seq_views)
+        if sort_lengths and len(seq_views) > 0:
             lengths = self._dfmatseqs[seq_views[0]].get_lengths_by_indices(batch_indices)
             bls = [(batch_indices, lengths) for (batch_indices,lengths)
                     in sorted(zip(batch_indices, lengths), key=lambda p: -p[1])]
@@ -1400,7 +1406,7 @@ class MultiviewDataSet:
         for name, path in dfmat_paths.iteritems():
             mv._dfmats[name] = DataFeatureMatrix.load(path, data=mv._data)
 
-        for name, path in dfmat_paths.iteritems():
+        for name, path in dfmatseq_paths.iteritems():
             mv._dfmatseqs[name] = DataFeatureMatrixSequence.load(path, data=mv._data)
 
         return mv

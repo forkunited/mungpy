@@ -1,5 +1,8 @@
 from mung.data import DataSet, Datum, Partition
-from mung.feature import FeaturePathSequence, FeatureSequenceSet, DataFeatureMatrixSequence, ValueType
+from mung.feature import (FeaturePathType, FeaturePathSequence, 
+                         FeatureSet, FeatureSequenceSet, 
+                         DataFeatureMatrix, DataFeatureMatrixSequence, 
+                         ValueType)
 
 def featurize_path_enum_seqs(input_data_dir, output_feature_dir, partition_file,
                              partition_fn, feature_name, paths, max_length,
