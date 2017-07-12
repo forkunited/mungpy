@@ -706,6 +706,12 @@ class FeatureSet:
     def get_size(self):
         return self._size
 
+    def get_token_count(self):
+        token_count = 0
+        for feature_type in self._feature_types:
+            token_count += feature_type.get_token_count()
+        return token_count
+
     def get_num_feature_types(self):
         return len(self._feature_types)
 
@@ -1088,17 +1094,18 @@ class DataFeatureMatrix:
 
 
 class DataFeatureMatrixSequence:
-    def __init__(self, data, feature_seq_set, init_features=True, mats=None, lengths=None):
+    def __init__(self, data, feature_seq_set, init_features=True, mats=None, lengths=None, mask=None):
         self._data = data
         self._feature_seq_set = feature_seq_set
         self._dfmats = []
         self._lengths = lengths
+        self._mask = mask
 
         if mats is None:
             self._compute(init_features=init_features)
         else:
-            if lengths is None:
-                raise ValueError("If mats is supplied, then lengths must also be supplied.")
+            if lengths is None or mask is None:
+                raise ValueError("If mats is supplied, then lengths and mask must also be supplied.")
             for mat in mats:
                 self._dfmats.append(DataFeatureMatrix(data, self._feature_seq_set.get_feature_set(i), init_features=False, mat=mat))
 
@@ -1136,7 +1143,7 @@ class DataFeatureMatrixSequence:
 
     def get_batch_by_indices(self, batch_indices, sort_lengths=True):
         batch = np.array(shape=(len(self._dfmats),
-                                size,
+                                len(batch_indices),
                                 self._dfmats[0].get_feature_set().get_size()))
 
         lengths = self._lengths[batch_indices]
@@ -1149,7 +1156,9 @@ class DataFeatureMatrixSequence:
         for i in range(len(self._dfmats)):
             batch[i] = self._dfmats[i].get_batch_by_indices(batch_indices)
 
-        return batch, lengths
+        mask = self._mask[batch_indices]
+
+        return batch, lengths, mask
 
     def extend(self, feature_seqs):
         start_num = self._feature_seq_set.get_num_feature_seqs()
@@ -1164,9 +1173,11 @@ class DataFeatureMatrixSequence:
             self._feature_seq_set.init_datum(self._data.get(i), start_from=start_num)
         self._feature_seq_set.init_end(start_from=start_num)
 
-        self._lengths = np.array(data.get_size())
+        self._lengths = np.zeros(shape=(data.get_size()))
+        self._mask = np.zeros(shape=(data.get_size(), self.get_size()))
         for i in range(self._data.get_size()):
             self._lengths[i] = self._feature_seq_set.get_datum_max_length(self._data.get(i))
+            self._mask[i] = repeat([1,0],[self._lengths[i], self.get_size()-self._lengths[i]])
 
         for i in range(self._feature_seq_set.get_size()):
             feature_set = self._feature_seq_seq.get_feature_set(i)
@@ -1179,9 +1190,11 @@ class DataFeatureMatrixSequence:
                 self._feature_seq_set.init_datum(self._data.get(i))
             self._feature_seq_set.init_end()
 
-        self._lengths = np.array(data.get_size())
+        self._lengths = np.zeros(shape=(data.get_size()))
+        self._mask = np.zeros(shape=(data.get_size(), self.get_size()))
         for i in range(self._data.get_size()):
             self._lengths[i] = self._feature_seq_set.get_datum_max_length(self._data.get(i))
+            self._mask[i] = repeat([1,0],[self._lengths[i], self.get_size()-self._lengths[i]])
 
         for i in range(self._feature_seq_set.get_size()):
             feature_set = self._feature_seq_set.get_feature_set(i)
@@ -1195,16 +1208,21 @@ class DataFeatureMatrixSequence:
         if preordered_data is None:
             shuffled_data = []
             shuffled_lengths = []
+            shuffled_mask = []
             for i in range(len(perm)):
                 shuffled_data.append(self._data.get(perm[i]))
                 shuffled_lengths.append(self._lengths[perm[i]])
+                shuffled_mask[i] = self._mask[perm[i]]
             self._data = DataSet(data=shuffled_data)
             self._lengths = np.array(shuffled_lengths)
+            self._mask = shuffled_mask
         else:
             self._data = preordered_data
-            self._lengths = np.array(data.get_size())
+            self._lengths = np.zeros(shape=(data.get_size()))
+            self._mask = np.zeros(shape=(data.get_size(), self.get_size()))
             for i in range(self._data.get_size()):
                 self._lengths[i] = self._feature_seq_set.get_datum_max_length(self._data.get(i))
+                self._mask[i] = repeat([1,0],[self._lengths[i], self.get_size()-self._lengths[i]])
 
         for dfmat in self._dfmats:
             dfmat.reorder(perm, preordered_data=self._data)
@@ -1222,11 +1240,14 @@ class DataFeatureMatrixSequence:
         dfmats_parts = dict()
 
         for key, data_part in data_parts.iteritems():
-            mats_part = [np.zeros([data_part.get_size(), self._feature_set.get_size()]) for i in range(self.get_size())]
+            mats_part = [np.zeros(shape=(data_part.get_size(), self._feature_set.get_size())) for i in range(self.get_size())]
+            part_indices = np.array([id_to_index[data_part.get(i).get_id()] for i in range(data_part.get_size())])
+            lengths_part = self._lengths[part_indices]
+            mask_part = self._mask[part_indices]
             for s in range(self.get_size()):
                 for i in range(data_part.get_size()):
                     mats_part[s][i] = self._dfmats[s].get_matrix()[id_to_index[data_part.get(i).get_id()]]
-            dfmats_parts[key] = DataFeatureMatrixSequence(data_part, self._feature_seq_set, mats=mats_part)
+            dfmats_parts[key] = DataFeatureMatrixSequence(data_part, self._feature_seq_set, mats=mats_part, lengths=lengths_part, mask=mask_part)
 
         return dfmat_parts
 
@@ -1234,6 +1255,7 @@ class DataFeatureMatrixSequence:
         info_path = join(dir_path, "info")
         mats_dir = join(dir_path, "mats")
         feats_dir = join(dir_path, "feats")
+        mask_path = join(dir_path, "mask")
 
         if not os.path.exists(dir_path):
             os.makedirs(dir_path)
@@ -1258,6 +1280,8 @@ class DataFeatureMatrixSequence:
         with open(info_path, 'w') as fp:
             json.dump(info, fp)
 
+        np.save(mask_path, self._mask)
+
         self._feature_seq_set.save(feats_dir)
         for i in range(len(self._dfmats)):
             np.save(join(mats_dir, str(i)), self._dfmats[i].get_matrix())
@@ -1267,6 +1291,7 @@ class DataFeatureMatrixSequence:
         info_path = join(dir_path, "info")
         mats_path = join(dir_path, "mats")
         feats_dir = join(dir_path, "feats")
+        mask_path = join(dir_path, "mask")
 
         feature_set = FeatureSequenceSet.load(feats_dir)
 
@@ -1278,14 +1303,14 @@ class DataFeatureMatrixSequence:
             with open(info_path, 'r') as fp:
                 obj = json.load(fp)
                 data = DataSet.load(obj["data_dir"], id_key=obj["id_key"], order=obj["data_order"])
-            return DataFeatureMatrixSequence(data, feature_seq_set, mats=mats, lengths=np.array(obj["lengths"]))
+            return DataFeatureMatrixSequence(data, feature_seq_set, mats=mats, lengths=np.array(obj["lengths"]), mask=np.load(mask_path))
         else:
             mat_id_to_index = dict()
             for i in range(len(obj["data_order"])):
                 mat_id_to_index[obj["data_order"]] = i
             # Perm : target index (data) -> source index (original mat)
             perm = [mat_id_to_index[data.get(i).get_id()] for i in range(data.get_size())]
-            dfmats = DataFeatureMatrixSequence(data, feature_seq_set, mats=mats, lengths=np.array(obj["lengths"]))
+            dfmats = DataFeatureMatrixSequence(data, feature_seq_set, mats=mats, lengths=np.array(obj["lengths"]), mask=np.load(mask_path))
             dfmats.reorder(preordered_data=data)
             return dfmats
 
@@ -1296,11 +1321,11 @@ class MultiviewDataSet:
         self._dfmats = dict()
         self._dfmatseqs = dict()
 
-    def get_view(self, name, sequence=False):
-        if sequence:
-            return self._dfmats[name]
+    def __getitem__(self, key):
+        if key in self._dfmats:
+            return self._dfmats[key]
         else:
-            return self._dfmatseqs[name]
+            return self._dfmatseqs[key]
 
     def partition(self, partition, key_fn):
         data_parts = self._data.partition(partition, key_fn)
