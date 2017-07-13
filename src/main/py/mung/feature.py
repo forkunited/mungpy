@@ -412,8 +412,7 @@ class FeaturePathType(FeatureType):
         path_values = self._get_path_values(datum)
         if self._seq_index is not None:
             path_values = path_values[self._seq_index]
-            if len(path_values) >= self._seq_index:
-                return vec
+        
         for path_value in path_values:
             index = None
             value = None
@@ -577,9 +576,8 @@ class FeaturePathSequence(FeatureSequence):
         self._init_type = None
         self._types = []
 
-        if vocab is not None:
-            self._vocab = vocab
-            self._init_types()
+        self._vocab = vocab
+        self._init_types()
 
     def _init_types(self):
         self._types = []
@@ -938,7 +936,7 @@ class DataFeatureMatrix:
     def get_random_batch(self, size):
         if size > self.get_size():
             raise ValueError("Batch size cannot be greater than data set size")
-        batch_indices = np.random(self.get_size(), size, replace=False)
+        batch_indices = np.random.choice(self.get_size(), size, replace=False)
         return self._mat[batch_indices]
 
     def get_batch_by_indices(self, batch_indices):
@@ -1132,7 +1130,7 @@ class DataFeatureMatrixSequence:
     def get_random_batch(self, size, sort_lengths=True):
         if size > self._data.get_size():
             raise ValueError("Batch size cannot be greater than data set size")
-        batch_indices = np.random(self.get_size(), size, replace=False)
+        batch_indices = np.random.choice(self.get_size(), size, replace=False)
         return self.get_batch_by_indices(batch_indices, sort_lengths=sort_lengths)
 
     def get_batch(self, batch_i, size, sort_lengths=True):
@@ -1146,7 +1144,7 @@ class DataFeatureMatrixSequence:
         return self._data.get_size() // size
 
     def get_batch_by_indices(self, batch_indices, sort_lengths=True):
-        batch = np.array(shape=(len(self._dfmats),
+        batch = np.zeros(shape=(len(self._dfmats),
                                 len(batch_indices),
                                 self._dfmats[0].get_feature_set().get_size()))
 
@@ -1333,6 +1331,12 @@ class MultiviewDataSet:
         else:
             return self._dfmatseqs[key]
 
+    def get_data(self):
+        return self._data
+
+    def get_size(self):
+        return self._data.get_size()
+
     def partition(self, partition, key_fn):
         data_parts = self._data.partition(partition, key_fn)
 
@@ -1343,6 +1347,7 @@ class MultiviewDataSet:
         mv_parts = dict()
         for key in data_parts.keys():
             mv_parts[key] = MultiviewDataSet()
+            mv_parts[key]._data = data_parts[key]
 
         for name, dfmat in self._dfmats.iteritems():
             dfmat_parts = dfmat._data_partition(data_parts, id_to_index, key_fn)
@@ -1356,31 +1361,30 @@ class MultiviewDataSet:
 
         return mv_parts
 
-    def get_random_batch(self, size, sort_lengths=True, mat_views=None, seq_views=None):
+    def get_random_batch(self, size, sort_lengths=True, mat_views=None, seq_views=None, return_indices=False):
         if size > self._data.get_size():
             raise ValueError("Batch size cannot be greater than data set size")
-        batch_indices = np.random(self.get_size(), size, replace=False)
-        return self.get_batch_by_indices(batch_indices, sort_lengths=sort_lengths, mat_views=mat_views, seq_views=seq_views)
+        batch_indices = np.random.choice(self.get_size(), size, replace=False)
+        return self.get_batch_by_indices(batch_indices, sort_lengths=sort_lengths, 
+                                         mat_views=mat_views, seq_views=seq_views, return_indices=return_indices)
 
-    def get_batch(self, batch_i, size, sort_lengths=True, mat_views=None, seq_views=None):
+    def get_batch(self, batch_i, size, sort_lengths=True, mat_views=None, seq_views=None, return_indices=False):
         if size > self._data.get_size():
             raise ValueError("Batch size cannot be greater than data set size")
-        return self.get_batch_by_indices(np.array(range(batch_i*size, (batch_i+1)*size)), sort_lengths=sort_lengths, mat_views=mat_views, seq_views=seq_views)
+        return self.get_batch_by_indices(np.array(range(batch_i*size, (batch_i+1)*size)), 
+                                         sort_lengths=sort_lengths, mat_views=mat_views, 
+                                         seq_views=seq_views, return_indices=return_indices)
 
     def get_num_batches(self, size):
         if size > self._data.get_size():
             raise ValueError("Batch size cannot be greater than data set size")
         return self._data.get_size() // size
 
-    def get_batch_by_indices(self, batch_indices, sort_lengths=True, mat_views=None, seq_views=None):
+    def get_batch_by_indices(self, batch_indices, sort_lengths=True, mat_views=None, seq_views=None, return_indices=False):
         if mat_views is None:
             mat_views = self._dfmats.keys()
         if seq_views is None:
             seq_views = self._dfmatseqs.keys()
-
-        batch = np.array(shape=(len(self._dfmats),
-                                size,
-                                self._dfmats[0].get_feature_set().get_size()))
 
         # NOTE: Batches are sorted on the lengths of the first seq_view
         if sort_lengths and len(seq_views) > 0:
@@ -1396,7 +1400,10 @@ class MultiviewDataSet:
         for seq_view in seq_views:
             batch_dict[seq_view] = self._dfmatseqs[seq_view].get_batch_by_indices(batch_indices, sort_lengths=False)
 
-        return batch_dict
+        if return_indices:
+            return batch_dict, batch_indices
+        else:
+            return batch_dict
 
     @staticmethod
     def load(data_path, dfmat_paths=dict(), dfmatseq_paths=dict()):
