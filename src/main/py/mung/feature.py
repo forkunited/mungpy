@@ -315,7 +315,7 @@ class FeaturePathToken(FeatureToken):
         pass
 
 class FeaturePathType(FeatureType):
-    def __init__(self, name, paths, min_occur=1, no_init=False, value_type=ValueType.ENUMERABLE_ONE_HOT, value_fn=None, seq_index=None, vocab=None, token_fn=None):
+    def __init__(self, name, paths, min_occur=1, no_init=False, value_type=ValueType.ENUMERABLE_ONE_HOT, value_fn=None, seq_index=None, vocab=None, token_fn=lambda x : x):
         FeatureType.__init__(self)
         self._name = name
         self._paths = paths
@@ -353,27 +353,23 @@ class FeaturePathType(FeatureType):
 
     def _apply_value_fn_seq(self, path_to_values):
         seq = [[] for i in range(self._seq_index+1)]
-        token_fn = self._token_fn
-        if token_fn is None:
-            token_fn = lambda x : x
 
         for path in path_to_values:
             values = path_to_values[path]
             if len(values) == 0:
-                continue
-            if isinstance(values[0], list):
-                if self._value_type != ValueType.SCALAR:
-                    new_values = []
-                    new_values.append(Symbol.SEQ_START)
-                    for value in values:
-                        new_values.extend([token_fn(el) for el in value])
-                        new_values.append(Symbol.SEQ_MID)
-                    new_values[len(new_values)-1] = Symbol.SEQ_END
-                    values = new_values[:self._seq_index+1]
-                else:
-                    values = [token_fn(el) for el in value for value in values][:self._seq_index+1]
+                values = [self._token_fn(Symbol.SEQ_START), self._token_fn(Symbol.SEQ_END)]
+            elif isinstance(values[0], list):
+                new_values = [self._token_fn(Symbol.SEQ_START)]
+                for value in values:
+                    new_values.extend([self._token_fn(el) for el in value])
+                    new_values.append(self._token_fn(Symbol.SEQ_MID))
+                new_values[len(new_values)-1] = self._token_fn(Symbol.SEQ_END)
+                values = new_values[:self._seq_index+1]
             else:
-                values = [token_fn(value) for value in values]
+                new_values = [self._token_fn(Symbol.SEQ_START)]
+                new_values.extend([self._token_fn(value) for value in values])
+                new_values.append(self._token_fn(Symbol.SEQ_END))
+                values = new_values[:self._seq_index+1]
 
             for i in range(min(len(values), len(seq))):
                 seq[i].append((path, values[i]))
@@ -381,9 +377,6 @@ class FeaturePathType(FeatureType):
 
     def _apply_value_fn_nonseq(self, path_to_values):
         mapping = []
-        token_fn = self._token_fn
-        if token_fn is None:
-            token_fn = lambda x : x
 
         for path in path_to_values:
             values = path_to_values[path]
@@ -392,7 +385,7 @@ class FeaturePathType(FeatureType):
             if isinstance(values[0], list):
                 values = [el for el in value for value in values]
             for i in range(len(values)):
-                mapping.append((path + "_" + str(i), token_fn(values[i])))
+                mapping.append((path + "_" + str(i), self._token_fn(values[i])))
         return mapping
 
     # Get sequence of (key -> value) mappings represented as
@@ -424,7 +417,7 @@ class FeaturePathType(FeatureType):
                 if key in self._vocab:
                     index = self._vocab[key]
                 else:
-                    index = self._vocab[path_value[0] + "_" + Symbol.SEQ_UNC]
+                    index = self._vocab[path_value[0] + "_" + self._token_fn(Symbol.SEQ_UNC)]
 
                 if self._value_type == ValueType.ENUMERABLE_INDEX:
                     vec[start_index] = index
@@ -492,10 +485,10 @@ class FeaturePathType(FeatureType):
         if self._seq_index is not None and self._value_type != ValueType.SCALAR:
             index = 0
             for path in self._paths:
-                self._vocab[path + "_" + Symbol.SEQ_UNC] = index*4
-                self._vocab[path + "_" + Symbol.SEQ_START] = index*4+1
-                self._vocab[path + "_" + Symbol.SEQ_END] = index*4+2
-                self._vocab[path + "_" + Symbol.SEQ_MID] = index*4+3
+                self._vocab[path + "_" + self._token_fn(Symbol.SEQ_UNC)] = index*4
+                self._vocab[path + "_" + self._token_fn(Symbol.SEQ_START)] = index*4+1
+                self._vocab[path + "_" + self._token_fn(Symbol.SEQ_END)] = index*4+2
+                self._vocab[path + "_" + self._token_fn(Symbol.SEQ_MID)] = index*4+3
                 index += 1
 
             index = index*4
@@ -547,10 +540,10 @@ class FeaturePathType(FeatureType):
         value_type = obj["value_type"]
         value_fn = None
         if "value_fn" in obj:
-            value_fn = pickle.loads(self._value_fn)
+            value_fn = pickle.loads(obj["value_fn"])
         token_fn = None
         if "token_fn" in obj:
-            token_fn = pickle.loads(self._token_fn)
+            token_fn = pickle.loads(obj["token_fn"])
         seq_index = None
         if "seq_index" in obj:
             seq_index = obj["seq_index"]
@@ -1127,23 +1120,23 @@ class DataFeatureMatrixSequence:
         return self._dfmats[seq_i].get_vector(data_i)
 
     # NOTE: These batch functions can probably be sped up quite a bit if necessary
-    def get_random_batch(self, size, sort_lengths=True):
+    def get_random_batch(self, size, sort_lengths=True, squeeze=True):
         if size > self._data.get_size():
             raise ValueError("Batch size cannot be greater than data set size")
         batch_indices = np.random.choice(self.get_size(), size, replace=False)
-        return self.get_batch_by_indices(batch_indices, sort_lengths=sort_lengths)
+        return self.get_batch_by_indices(batch_indices, sort_lengths=sort_lengths, squeeze=squeeze)
 
-    def get_batch(self, batch_i, size, sort_lengths=True):
+    def get_batch(self, batch_i, size, sort_lengths=True, squeeze=True):
         if size > self._data.get_size():
             raise ValueError("Batch size cannot be greater than data set size")
-        return self.get_batch_by_indices(np.array(range(batch_i*size,(batch_i+1)*size)), sort_lengths=sort_lengths)
+        return self.get_batch_by_indices(np.array(range(batch_i*size,(batch_i+1)*size)), sort_lengths=sort_lengths, squeeze=squeeze)
 
     def get_num_batches(self, size):
         if size > self._data.get_size():
             raise ValueError("Batch size cannot be greater than data set size")
         return self._data.get_size() // size
 
-    def get_batch_by_indices(self, batch_indices, sort_lengths=True):
+    def get_batch_by_indices(self, batch_indices, sort_lengths=True, squeeze=True):
         batch = np.zeros(shape=(len(self._dfmats),
                                 len(batch_indices),
                                 self._dfmats[0].get_feature_set().get_size()))
@@ -1159,6 +1152,9 @@ class DataFeatureMatrixSequence:
             batch[i] = self._dfmats[i].get_batch_by_indices(batch_indices)
 
         mask = self._mask[batch_indices]
+
+        if squeeze:
+            batch = np.squeeze(batch)
 
         return batch, lengths, mask
 
