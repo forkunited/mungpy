@@ -3,6 +3,8 @@ import abc
 import json
 import dill as pickle
 import os.path
+import torch
+from torch.autograd import Variable
 from mung import data
 from mung.data import DataSet
 from bidict import bidict
@@ -20,6 +22,30 @@ class Symbol:
     SEQ_MID = "SYM_MID"
     SEQ_END = "SYM_END"
     SEQ_UNC = "SYM_UNC"
+
+    @staticmethod
+    def index(symbol):
+        if symbol == SEQ_UNC:
+            return 0
+        elif symbol == SEQ_START:
+            return 1
+        elif symbol == SEQ_END:
+            return 2
+        elif symbol == SEQ_MID:
+            return 3
+        else:
+            return None
+
+class ArrayFormat:
+    NUMPY = 0
+    TORCH = 1
+
+    @staticmethod
+    def cast(arr, form):
+        if form == ArrayFormat.TORCH:
+            return torch.from_numpy(arr).float()
+        else:
+            return arr
 
 class FeatureToken(object):
     __metaclass__ = abc.ABCMeta
@@ -302,7 +328,7 @@ class FeaturePathToken(FeatureToken):
     def get_name(self):
         return self._name
 
-    def get(self):
+    def get_value(self):
         return self._token
 
     def init_start(self):
@@ -434,7 +460,15 @@ class FeaturePathType(FeatureType):
             return len(self._vocab)
 
     def get_token(self, index):
-        return FeaturePathToken(self._name, index, self._vocab.inv[index])
+        # FIXME This is a bit of a hack (splitting for convenience)
+        path_value = self._vocab.inv[index]
+        under_idx = path_value.rfind("_")
+        path = path_value[:under_idx]
+        value = ""
+        if under_idx < len(path_value) - 1:
+            value = path_value[under_idx+1:]
+
+        return FeaturePathToken(self._name + "_" + path, index, value)
 
     def __eq__(self, feature_type):
         if not isinstance(feature_type, FeaturePathType):
@@ -485,10 +519,10 @@ class FeaturePathType(FeatureType):
         if self._seq_index is not None and self._value_type != ValueType.SCALAR:
             index = 0
             for path in self._paths:
-                self._vocab[path + "_" + self._token_fn(Symbol.SEQ_UNC)] = index*4
-                self._vocab[path + "_" + self._token_fn(Symbol.SEQ_START)] = index*4+1
-                self._vocab[path + "_" + self._token_fn(Symbol.SEQ_END)] = index*4+2
-                self._vocab[path + "_" + self._token_fn(Symbol.SEQ_MID)] = index*4+3
+                self._vocab[path + "_" + self._token_fn(Symbol.SEQ_UNC)] = index*4 + Symbol.index(Symbol.SEQ_UNC)
+                self._vocab[path + "_" + self._token_fn(Symbol.SEQ_START)] = index*4 + Symbol.index(Symbol.SEQ_START)
+                self._vocab[path + "_" + self._token_fn(Symbol.SEQ_END)] = index*4 + Symbol.index(Symbol.SEQ_END)
+                self._vocab[path + "_" + self._token_fn(Symbol.SEQ_MID)] = index*4 + Symbol.index(Symbol.SEQ_MID)
                 index += 1
 
             index = index*4
@@ -910,30 +944,33 @@ class DataFeatureMatrix:
     def get_feature_set(self):
         return self._feature_set
 
+    def get_feature_token(self, index):
+        return self._feature_set.get_feature_token(index)
+
     def get_matrix(self):
         return self._mat
 
     def get_vector(self, i):
         return self._mat[i]
 
-    def get_batch(self, i, size):
+    def get_batch(self, i, size, form=ArrayFormat.TORCH):
         if size > self.get_size():
             raise ValueError("Batch size cannot be greater than data set size")
-        return self._mat[i*size:(i+1)*size]
+        return ArrayFormat.cast(self._mat[i*size:(i+1)*size], form)
 
     def get_num_batches(self, size):
         if size > self.get_size():
             raise ValueError("Batch size cannot be greater than data set size")
         return self._data.get_size() // size
 
-    def get_random_batch(self, size):
+    def get_random_batch(self, size, form=ArrayFormat.TORCH):
         if size > self.get_size():
             raise ValueError("Batch size cannot be greater than data set size")
         batch_indices = np.random.choice(self.get_size(), size, replace=False)
-        return self._mat[batch_indices]
+        return ArrayFormat.cast(self._mat[batch_indices], form)
 
-    def get_batch_by_indices(self, batch_indices):
-        return self._mat[batch_indices]
+    def get_batch_by_indices(self, batch_indices, form=ArrayFormat.TORCH):
+        return ArrayFormat.cast(self._mat[batch_indices], form)
 
     def get_non_zero_indices(self, i):
         if self._compute_nz:
@@ -1033,6 +1070,20 @@ class DataFeatureMatrix:
             dfmat_parts[key] = DataFeatureMatrix(data_part, self._feature_set, init_features=False, mat=mat_part, compute_non_zero=self._compute_nz)
         return dfmat_parts
 
+    def filter(self, filter_fn):
+        filtered_data = self._data.filter(filter_fn)
+
+        id_to_index = dict()
+        for i in range(self._data.get_size()):
+            id_to_index[self._data.get(i).get_id()] = i
+        return self._data_filter(filtered_data, id_to_index, filter_fn)
+
+    def _data_filter(self, filtered_data, id_to_index, filter_fn):
+        mat_filtered = np.zeros([filtered_data.get_size(), self._feature_set.get_size())
+        for i in range(filtered_data.get_size()):
+            mat_filtered[i] = self._mat[id_to_index[filtered_data.get(i).get_id()]]
+        return DataFeatureMatrix(filtered_data, self._feature_set, init_features=False, mat=mat_filtered, compute_non_zero=self._compute_nz)
+
     def save(self, dir_path):
         info_path = join(dir_path, "info")
         mat_path = join(dir_path, "mat")
@@ -1104,6 +1155,9 @@ class DataFeatureMatrixSequence:
             for i in range(len(mats)):
                 self._dfmats.append(DataFeatureMatrix(data, self._feature_seq_set.get_feature_set(i), init_features=False, mat=mats[i]))
 
+    def get_feature_token(self, index, seq_index=0):
+        return self._feature_seq_set.get_feature_token(index, seq_index=seq_index)
+
     def get_data(self):
         return self._data
 
@@ -1120,23 +1174,23 @@ class DataFeatureMatrixSequence:
         return self._dfmats[seq_i].get_vector(data_i)
 
     # NOTE: These batch functions can probably be sped up quite a bit if necessary
-    def get_random_batch(self, size, sort_lengths=True, squeeze=True):
+    def get_random_batch(self, size, form=ArrayFormat.TORCH, sort_lengths=True, squeeze=True):
         if size > self._data.get_size():
             raise ValueError("Batch size cannot be greater than data set size")
         batch_indices = np.random.choice(self.get_size(), size, replace=False)
-        return self.get_batch_by_indices(batch_indices, sort_lengths=sort_lengths, squeeze=squeeze)
+        return self.get_batch_by_indices(batch_indices, form=form, sort_lengths=sort_lengths, squeeze=squeeze)
 
-    def get_batch(self, batch_i, size, sort_lengths=True, squeeze=True):
+    def get_batch(self, batch_i, size, form=ArrayFormat.TORCH, sort_lengths=True, squeeze=True):
         if size > self._data.get_size():
             raise ValueError("Batch size cannot be greater than data set size")
-        return self.get_batch_by_indices(np.array(range(batch_i*size,(batch_i+1)*size)), sort_lengths=sort_lengths, squeeze=squeeze)
+        return self.get_batch_by_indices(np.array(range(batch_i*size,(batch_i+1)*size)), form=form, sort_lengths=sort_lengths, squeeze=squeeze)
 
     def get_num_batches(self, size):
         if size > self._data.get_size():
             raise ValueError("Batch size cannot be greater than data set size")
         return self._data.get_size() // size
 
-    def get_batch_by_indices(self, batch_indices, sort_lengths=True, squeeze=True):
+    def get_batch_by_indices(self, batch_indices, form=ArrayFormat.TORCH, sort_lengths=True, squeeze=True):
         batch = np.zeros(shape=(len(self._dfmats),
                                 len(batch_indices),
                                 self._dfmats[0].get_feature_set().get_size()))
@@ -1149,14 +1203,14 @@ class DataFeatureMatrixSequence:
             lengths = np.array([bl[1] for bl in bls])
 
         for i in range(len(self._dfmats)):
-            batch[i] = self._dfmats[i].get_batch_by_indices(batch_indices)
+            batch[i] = self._dfmats[i].get_batch_by_indices(batch_indices, form=ArrayFormat.NUMPY)
 
         mask = self._mask[batch_indices]
 
         if squeeze:
             batch = np.squeeze(batch)
 
-        return batch, lengths, mask
+        return ArrayFormat.cast(batch, form), lengths, ArrayFormat.cast(mask, form)
 
     def extend(self, feature_seqs):
         start_num = self._feature_seq_set.get_num_feature_seqs()
@@ -1248,6 +1302,24 @@ class DataFeatureMatrixSequence:
             dfmats_parts[key] = DataFeatureMatrixSequence(data_part, self._feature_seq_set, mats=mats_part, lengths=lengths_part, mask=mask_part)
 
         return dfmats_parts
+
+    def filter(self, filter_fn):
+        filtered_data = self._data.filter(filter_fn)
+
+        id_to_index = dict()
+        for i in range(self._data.get_size()):
+            id_to_index[self._data.get(i).get_id()] = i
+        return self._data_filter(filtered_data, id_to_index, filter_fn)
+
+    def _data_filter(self, data_filtered, id_to_index, filter_fn):
+        mats_filtered = [np.zeros(shape=(data_filtered.get_size(), self._feature_seq_set.get_feature_set(0).get_size())) for i in range(self._feature_seq_set.get_size())]
+        filtered_indices = np.array([id_to_index[data_filtered.get(i).get_id()] for i in range(data_filtered.get_size())])
+        lengths_filtered = self._lengths[filtered_indices]
+        mask_filtered = self._mask[filtered_indices]
+        for s in range(self._feature_seq_set.get_size()):
+            for i in range(data_filtered.get_size()):
+                mats_filtered[s][i] = self._dfmats[s].get_matrix()[id_to_index[data_filtered.get(i).get_id()]]
+        return DataFeatureMatrixSequence(data_filtered, self._feature_seq_set, mats=mats_filtered, lengths=lengths_filtered, mask=mask_filtered)
 
     def save(self, dir_path):
         info_path = join(dir_path, "info")
@@ -1357,6 +1429,26 @@ class MultiviewDataSet:
 
         return mv_parts
 
+    def filter(self, filter_fn):
+        data_filtered = self._data.filter(filter_fn)
+
+        id_to_index = dict()
+        for i in range(self._data.get_size()):
+            id_to_index[self._data.get(i).get_id()] = i
+
+        mv_filtered = MultiviewDataSet()
+        mv_filtered._data = data_filtered
+
+        for name, dfmat in self._dfmats.iteritems():
+            dfmat_filtered = dfmat._data_filter(data_filtered, id_to_index, filter_fn)
+            mv_filtered._dfmats[name] = dfmat_filtered
+
+        for name, dfmatseq in self._dfmatseqs.iteritems():
+            dfmatseq_filtered = dfmatseq._data_filter(data_filtered, id_to_index, filter_fn)
+            mv_filtered._dfmatseq[name] = dfmatseq_filtered
+
+        return mv_parts
+
     def get_random_batch(self, size, sort_lengths=True, mat_views=None, seq_views=None, return_indices=False):
         if size > self._data.get_size():
             raise ValueError("Batch size cannot be greater than data set size")
@@ -1413,3 +1505,4 @@ class MultiviewDataSet:
             mv._dfmatseqs[name] = DataFeatureMatrixSequence.load(path, data=mv._data)
 
         return mv
+

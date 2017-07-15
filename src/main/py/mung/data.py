@@ -160,6 +160,13 @@ class DataSet:
             datas.append(DataSet(data=part_data))
         return datas
 
+    def filter(self, filter_fn):
+        data = []
+        for i in range(self.get_size()):
+            if filter_fn(self.get(i)):
+                data.append(self.get(i))
+        return DataSet(data=data)
+
     def partition(self, partition, key_fn):
         return partition.split(self, key_fn)
 
