@@ -18,20 +18,20 @@ class ValueType:
     SCALAR = 2
 
 class Symbol:
-    SEQ_START = "SYM_START"
-    SEQ_MID = "SYM_MID"
-    SEQ_END = "SYM_END"
-    SEQ_UNC = "SYM_UNC"
+    SEQ_START = "#start#"
+    SEQ_MID = "#mid#"
+    SEQ_END = "#end#"
+    SEQ_UNC = "#unc#"
 
     @staticmethod
     def index(symbol):
-        if symbol == SEQ_UNC:
+        if symbol == Symbol.SEQ_UNC:
             return 0
-        elif symbol == SEQ_START:
+        elif symbol == Symbol.SEQ_START:
             return 1
-        elif symbol == SEQ_END:
+        elif symbol == Symbol.SEQ_END:
             return 2
-        elif symbol == SEQ_MID:
+        elif symbol == Symbol.SEQ_MID:
             return 3
         else:
             return None
@@ -771,10 +771,10 @@ class FeatureSet:
     def get_feature_token(self, index):
         offset = 0
         for i in range(len(self._feature_types)):
-            if index < offset + self._feature_types[i].get_size():
+            if index < offset + self._feature_types[i].get_token_count():
                 return self._feature_types[i].get_token(index - offset)
             else:
-                offset += self._feature_types[i].get_size()
+                offset += self._feature_types[i].get_token_count()
         return None
 
     def get_feature_type(self, index):
@@ -1079,7 +1079,7 @@ class DataFeatureMatrix:
         return self._data_filter(filtered_data, id_to_index, filter_fn)
 
     def _data_filter(self, filtered_data, id_to_index, filter_fn):
-        mat_filtered = np.zeros([filtered_data.get_size(), self._feature_set.get_size())
+        mat_filtered = np.zeros([filtered_data.get_size(), self._feature_set.get_size()])
         for i in range(filtered_data.get_size()):
             mat_filtered[i] = self._mat[id_to_index[filtered_data.get(i).get_id()]]
         return DataFeatureMatrix(filtered_data, self._feature_set, init_features=False, mat=mat_filtered, compute_non_zero=self._compute_nz)
@@ -1445,9 +1445,9 @@ class MultiviewDataSet:
 
         for name, dfmatseq in self._dfmatseqs.iteritems():
             dfmatseq_filtered = dfmatseq._data_filter(data_filtered, id_to_index, filter_fn)
-            mv_filtered._dfmatseq[name] = dfmatseq_filtered
+            mv_filtered._dfmatseqs[name] = dfmatseq_filtered
 
-        return mv_parts
+        return mv_filtered
 
     def get_random_batch(self, size, sort_lengths=True, mat_views=None, seq_views=None, return_indices=False):
         if size > self._data.get_size():
