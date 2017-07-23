@@ -129,8 +129,14 @@ class DataSet:
     def get_directory(self):
         return self._source_dir
 
-    def get(self, i):
-        return self._data[i]
+    def __len__(self):
+        return len(self._data)
+
+    def __getitem__(self, key):
+        return self._data[key]
+
+    def __iter__(self):
+        return self._data.__iter__()
 
     def get_data(self):
         return self._data

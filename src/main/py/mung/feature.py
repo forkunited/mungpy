@@ -431,7 +431,7 @@ class FeaturePathType(FeatureType):
         path_values = self._get_path_values(datum)
         if self._seq_index is not None:
             path_values = path_values[self._seq_index]
-        
+
         for path_value in path_values:
             index = None
             value = None
@@ -1453,14 +1453,14 @@ class MultiviewDataSet:
         if size > self._data.get_size():
             raise ValueError("Batch size cannot be greater than data set size")
         batch_indices = np.random.choice(self.get_size(), size, replace=False)
-        return self.get_batch_by_indices(batch_indices, sort_lengths=sort_lengths, 
+        return self.get_batch_by_indices(batch_indices, sort_lengths=sort_lengths,
                                          mat_views=mat_views, seq_views=seq_views, return_indices=return_indices)
 
     def get_batch(self, batch_i, size, sort_lengths=True, mat_views=None, seq_views=None, return_indices=False):
         if size > self._data.get_size():
             raise ValueError("Batch size cannot be greater than data set size")
-        return self.get_batch_by_indices(np.array(range(batch_i*size, (batch_i+1)*size)), 
-                                         sort_lengths=sort_lengths, mat_views=mat_views, 
+        return self.get_batch_by_indices(np.array(range(batch_i*size, (batch_i+1)*size)),
+                                         sort_lengths=sort_lengths, mat_views=mat_views,
                                          seq_views=seq_views, return_indices=return_indices)
 
     def get_num_batches(self, size):
@@ -1505,4 +1505,3 @@ class MultiviewDataSet:
             mv._dfmatseqs[name] = DataFeatureMatrixSequence.load(path, data=mv._data)
 
         return mv
-
