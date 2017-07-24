@@ -273,7 +273,10 @@ class Partition:
         P = Partition()
         with open(file_path, 'r') as fp:
             obj = json.load(fp)
-            P._keep_data = obj["keep_data"]
+            if "keep_data" in obj:
+                P._keep_data = obj["keep_data"]
+            else:
+                P._keep_data = False
             P._size = obj["size"]
             P._parts = obj["parts"]
         return P
