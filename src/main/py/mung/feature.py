@@ -41,9 +41,13 @@ class ArrayFormat:
     TORCH = 1
 
     @staticmethod
-    def cast(arr, form):
+    def cast(arr, form, ints=False):
         if form == ArrayFormat.TORCH:
-            return torch.from_numpy(arr).float()
+            t = torch.from_numpy(arr)
+            if not ints:
+                return t.float()
+            else:
+                return t.long()
         else:
             return arr
 
@@ -1210,7 +1214,7 @@ class DataFeatureMatrixSequence:
         if squeeze:
             batch = np.squeeze(batch)
 
-        return ArrayFormat.cast(batch, form), lengths, ArrayFormat.cast(mask, form)
+        return ArrayFormat.cast(batch, form), ArrayFormat.cast(lengths, form, ints=True), ArrayFormat.cast(mask, form)
 
     def extend(self, feature_seqs):
         start_num = self._feature_seq_set.get_num_feature_seqs()
