@@ -1136,7 +1136,7 @@ class DataFeatureMatrix:
             for i in range(len(obj["data_order"])):
                 mat_id_to_index[obj["data_order"][i]] = i
             # Perm : target index (data) -> source index (original mat)
-            perm = [mat_id_to_index[data.get(i).get_id()] for i in range(data.get_size())]
+            perm = [mat_id_to_index[data[i].get_id()] for i in range(data.get_size())]
 
             dfmat = DataFeatureMatrix(data, feature_set, init_features=False, mat=mat, compute_non_zero=obj["compute_nz"])
             dfmat.reorder(perm, preordered_data=data)

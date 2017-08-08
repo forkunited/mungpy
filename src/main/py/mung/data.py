@@ -138,6 +138,9 @@ class DataSet:
     def __iter__(self):
         return self._data.__iter__()
 
+    def get(self, i):
+        return self._data[i]
+
     def get_data(self):
         return self._data
 
