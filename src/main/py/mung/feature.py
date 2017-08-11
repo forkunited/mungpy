@@ -1457,6 +1457,16 @@ class MultiviewDataSet:
 
         return mv_filtered
 
+    def get_random_subset(self, size):
+        if size is None:
+            return self
+        if size > self._data.get_size():
+            raise ValueError("Subset size cannot be greater than data set size")
+        subset_indices = np.random.choice(self.get_size(), size, replace=False)
+        subset_ids = Set([self._data.get(subset_indices[i]).get_id() for i in range(len(subset_indices))])
+        filter_fn = lambda d : d.get_id() in subset_ids
+        return self.filter(filter_fn)
+
     def get_random_batch(self, size, sort_lengths=True, mat_views=None, seq_views=None, return_indices=False):
         if size > self._data.get_size():
             raise ValueError("Batch size cannot be greater than data set size")
