@@ -320,17 +320,21 @@ class FeatureMatrixSequence(FeatureSequence):
 
 
 class FeaturePathToken(FeatureToken):
-    def __init__(self, name, index, token):
+    def __init__(self, name, path, index, token):
         FeatureToken.__init__(self)
         self._name = name
+        self._path = path
         self._index = index
         self._token = token
 
     def __str__(self):
-        return self._name + "_" + str(self._token)
+        return self._name + "_" + self._path + "_" + str(self._token)
 
     def get_name(self):
-        return self._name
+        return self._name + "_" + self._path
+
+    def get_path(self):
+        return self._path
 
     def get_value(self):
         return self._token
@@ -472,7 +476,7 @@ class FeaturePathType(FeatureType):
         if under_idx < len(path_value) - 1:
             value = path_value[under_idx+1:]
 
-        return FeaturePathToken(self._name + "_" + path, index, value)
+        return FeaturePathToken(self._name, path, index, value)
 
     def __eq__(self, feature_type):
         if not isinstance(feature_type, FeaturePathType):
