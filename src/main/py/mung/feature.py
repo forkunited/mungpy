@@ -11,6 +11,7 @@ from bidict import bidict
 from collections import Counter
 from os.path import join, isfile
 from os import listdir
+from sets import Set
 
 class ValueType:
     ENUMERABLE_ONE_HOT = 0
