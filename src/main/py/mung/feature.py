@@ -513,9 +513,39 @@ class FeaturePathType(FeatureType):
             return
         vocab_list = []
         for key in self._counter:
-            if self._value_type == ValueType.SCALAR or self._counter[key] >= self._min_occur:
+            if self._counter[key] >= self._min_occur:
                 vocab_list.append(key)
-        vocab_list.sort()
+
+        if self._value_type != ValueType.SCALAR:
+            vocab_list.sort()
+        else:
+            # If scalar, then keep dimensions in the order they were given
+            def cmp(v1, v2):
+                i1 = 0
+                i2 = 0
+
+                v1_path = v1[0:v1.rfind("_")]
+                v2_path = v2[0:v2.rfind("_")]
+
+                for i in range(len(self._paths)):
+                    if self._paths[i] == v1_path:
+                        i1 = i
+                    if self._paths[i] == v2_path:
+                        i2 = i
+                if i1 < i2:
+                    return -1
+                elif i1 > i2:
+                    return 1
+                else:
+                    if v1 < v2:
+                        return -1
+                    elif v2 < v1:
+                        return 1
+                    else:
+                        return 0
+
+            vocab_list.sort(cmp=cmp)
+
 
         if self._vocab is None:
             self._vocab = bidict()
