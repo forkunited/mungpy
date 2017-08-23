@@ -6,9 +6,6 @@ TYPE_ANNOTATIONS = "CoreNLPAnnotations"
 
 STANFORD_NLP_PORT = 9000
 
-<<<<<<< HEAD
-class CoreNLPAnnotator(Annotator)
-=======
 class CoreNLPAnnotations:
     KEY_TYPE = "type"
     KEY_TOKENS = "tokens"

@@ -993,17 +993,17 @@ class DataFeatureMatrix:
         return self._mat[i]
 
     def get_batch(self, i, size, form=ArrayFormat.TORCH):
-        if size > self.get_size():
+        if size > self.get_data().get_size():
             raise ValueError("Batch size cannot be greater than data set size")
         return ArrayFormat.cast(self._mat[i*size:(i+1)*size], form)
 
     def get_num_batches(self, size):
-        if size > self.get_size():
+        if size > self.get_data().get_size():
             raise ValueError("Batch size cannot be greater than data set size")
         return self._data.get_size() // size
 
     def get_random_batch(self, size, form=ArrayFormat.TORCH):
-        if size > self.get_size():
+        if size > self.get_data().get_size():
             raise ValueError("Batch size cannot be greater than data set size")
         batch_indices = np.random.choice(self.get_size(), size, replace=False)
         return ArrayFormat.cast(self._mat[batch_indices], form)
