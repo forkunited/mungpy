@@ -418,7 +418,7 @@ class FeaturePathType(FeatureType):
             if len(values) == 0:
                 continue
             if isinstance(values[0], list):
-                values = [el for el in value for value in values]
+                values = [el for value in values for el in value]
             for i in range(len(values)):
                 mapping.append((path + "_" + str(i), self._token_fn(values[i])))
         return mapping

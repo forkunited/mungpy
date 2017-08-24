@@ -14,12 +14,12 @@ class Annotator(object):
         self._target_key = target_key
         self._store_key = store_key
 
-    def annotate_directory(self, input_dir, output_dir=None, id_key="id"):
+    def annotate_directory(self, input_dir, output_dir=None, id_key="id", batch=1000):
         if output_dir is None:
             output_dir = input_dir
         D_in = mung.data.DataSet.load(input_dir, id_key=id_key)
         D_out = self.annotate_data(D_in)
-        D_out.save(output_dir)
+        D_out.save(output_dir, batch=batch)
 
     def annotate_data(self, data):
         annotated_data = []
