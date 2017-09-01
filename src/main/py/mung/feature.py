@@ -995,7 +995,16 @@ class DataFeatureMatrix:
     def get_batch(self, i, size, form=ArrayFormat.TORCH):
         if size > self.get_data().get_size():
             raise ValueError("Batch size cannot be greater than data set size")
+
         return ArrayFormat.cast(self._mat[i*size:(i+1)*size], form)
+
+    def get_final_batch(self, size, form=ArrayFormat.TORCH):
+        if size > self.get_data().get_size():
+            raise ValueError("Batch size cannot be greater than data set size")
+        final_size = self._data.get_size() % size
+        if final_size == 0:
+            return None
+        return ArrayFormat.cast(self._mat[self._data.get_size()-final_size:self._data.get_size()], form)
 
     def get_num_batches(self, size):
         if size > self.get_data().get_size():
@@ -1223,6 +1232,15 @@ class DataFeatureMatrixSequence:
         if size > self._data.get_size():
             raise ValueError("Batch size cannot be greater than data set size")
         return self.get_batch_by_indices(np.array(range(batch_i*size,(batch_i+1)*size)), form=form, sort_lengths=sort_lengths, squeeze=squeeze)
+
+    def get_final_batch(self, size, form=ArrayFormat.TORCH, sort_lengths=True, squeeze=True):
+        if size > self._data.get_size():
+            raise ValueError("Batch size cannot be greater than data set size")
+        final_size = self._data.get_size() % size
+        if final_size == 0:
+            return None
+
+        return self.get_batch_by_indices(np.array(range(self._data.get_size()-final_size,self._data.get_size()), form=form, sort_lengths=sort_lengths, squeeze=squeeze)
 
     def get_num_batches(self, size):
         if size > self._data.get_size():
@@ -1512,6 +1530,15 @@ class MultiviewDataSet:
                                          sort_lengths=sort_lengths, mat_views=mat_views,
                                          seq_views=seq_views, return_indices=return_indices)
 
+    def get_final_batch(self, size, sort_lengths=True, mat_views=None, seq_views=None, return_indices=False):
+        if size > self._data.get_size():
+            raise ValueError("Batch size cannot be greater than data set size")
+        final_size = self._data.get_size() % size
+        if final_size == 0:
+            return None
+        return self.get_batch_by_indices(np.array(range(self._data.get_size() - final_size, self._data.get_size())),
+                                         sort_lengths=sort_lengths, mat_views=mat_views,
+                                         seq_views=seq_views, return_indices=return_indices)
     def get_num_batches(self, size):
         if size > self._data.get_size():
             raise ValueError("Batch size cannot be greater than data set size")
