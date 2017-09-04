@@ -60,7 +60,7 @@ class CoreNLPAnnotations:
             sentences = Sentences.from_dict(datum, obj[self.KEY_SENTENCES])
 
         clean_strs = None
-        if self.KEY_CLEAN_STRINGS in obj
+        if self.KEY_CLEAN_STRINGS in obj:
             clean_strs = Strings.from_dict(datum, obj[self.KEY_CLEAN_STRINGS])
         return CoreNLPAnnotations(tokens=tokens, pos=pos, lemmas=lemmas, sentences=sentences, clean_strs=clean_strs)
 
