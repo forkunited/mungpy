@@ -1240,7 +1240,7 @@ class DataFeatureMatrixSequence:
         if final_size == 0:
             return None
 
-        return self.get_batch_by_indices(np.array(range(self._data.get_size()-final_size,self._data.get_size()), form=form, sort_lengths=sort_lengths, squeeze=squeeze)
+        return self.get_batch_by_indices(np.array(range(self._data.get_size()-final_size,self._data.get_size())), form=form, sort_lengths=sort_lengths, squeeze=squeeze)
 
     def get_num_batches(self, size):
         if size > self._data.get_size():
