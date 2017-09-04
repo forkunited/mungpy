@@ -1,6 +1,6 @@
 from pycorenlp import StanfordCoreNLP
 from mung.data import DatumReference
-from mung.nlp.annotation import Tokens, PoS, Lemmas, Sentences, Annotator
+from mung.nlp.annotation import Tokens, PoS, Lemmas, Sentences, Strings, Annotator
 
 TYPE_ANNOTATIONS = "CoreNLPAnnotations"
 
@@ -12,12 +12,14 @@ class CoreNLPAnnotations:
     KEY_POS = "pos"
     KEY_LEMMAS = "lemmas"
     KEY_SENTENCES = "sents"
+    KEY_CLEAN_STRINGS = "clean_strs"
 
-    def __init__(self, tokens=None, pos=None, lemmas=None, sentences=None):
+    def __init__(self, tokens=None, pos=None, lemmas=None, sentences=None, clean_strs=None):
         self._tokens = tokens
         self._pos = pos
         self._lemmas = lemmas
         self._sentences = sentences
+        self._clean_strs = clean_strs
 
     def to_dict(self):
         obj = dict()
@@ -31,6 +33,8 @@ class CoreNLPAnnotations:
             obj[self.KEY_LEMMAS] = self._lemmas.to_dict()
         if self._sentences is not None:
             obj[self.KEY_SENTENCES] = self._sentences.to_dict()
+        if self._clean_strs is not None:
+            obj[self.KEY_CLEAN_STRINGS] = self._clean_strs.to_dict()
 
         return obj
 
@@ -55,7 +59,10 @@ class CoreNLPAnnotations:
         if self.KEY_SENTENCES in obj:
             sentences = Sentences.from_dict(datum, obj[self.KEY_SENTENCES])
 
-        return CoreNLPAnnotations(tokens=tokens, pos=pos, lemmas=lemmas, sentences=sentences)
+        clean_strs = None
+        if self.KEY_CLEAN_STRINGS in obj
+            clean_strs = Strings.from_dict(datum, obj[self.KEY_CLEAN_STRINGS])
+        return CoreNLPAnnotations(tokens=tokens, pos=pos, lemmas=lemmas, sentences=sentences, clean_strs=clean_strs)
 
 
 class CoreNLPAnnotator(Annotator):
@@ -85,8 +92,9 @@ class CoreNLPAnnotator(Annotator):
                 pos = PoS(tokens_ref, [])
                 lemmas = Lemmas(tokens_ref, [])
                 sentences = Sentences(tokens_ref, [])
-                return CoreNLPAnnotations(tokens=tokens,pos=pos,lemmas=lemmas,sentences=sentences)
-            
+                clean_strs = Strings(tokens_ref, [])
+                return CoreNLPAnnotations(tokens=tokens,pos=pos,lemmas=lemmas,sentences=sentences,clean_strs=clean_strs)
+
             ann = self._nlp.annotate(
                 text,
                 properties={'annotators': 'pos,lemma',
@@ -95,6 +103,7 @@ class CoreNLPAnnotator(Annotator):
             spans = []
             lemma_strs = []
             pos_strs = []
+            clean_strs = []
             if isinstance(ann, basestring):
                 ann = json.loads(ann.replace('\x00', '?').encode('latin-1'), encoding='utf-8', strict=True)
 
@@ -104,6 +113,21 @@ class CoreNLPAnnotator(Annotator):
                     spans.append((token["characterOffsetBegin"], token["characterOffsetEnd"]))
                     lemma_strs.append(token['lemma'])
                     pos_strs.append(token['pos'])
+
+                    token_text = text[token["characterOffsetBegin"]:token["characterOffsetEnd"]]
+                    token_text = token_text.lower()
+                    if token_text.endswith("er"):
+                        clean_strs.append(token_text[:-2])
+                        clean_strs.append("-er")
+                    elif token_text.endswith("est"):
+                        clean_strs.append(token_text[:-3])
+                        clean_strs.append("-est")
+                    elif token_text.endswith("ish"):
+                        clean_strs.append(token_text[:-3])
+                        clean_strs.append("-ish")
+                    else:
+                        clean_strs.append(token_text)
+
                 sent_spans.append((token_index, token_index + len(sentence['tokens'])))
                 token_index += len(sentence['tokens'])
 
@@ -111,8 +135,8 @@ class CoreNLPAnnotator(Annotator):
             pos = PoS(tokens_ref, pos_strs)
             lemmas = Lemmas(tokens_ref, lemma_strs)
             sentences = Sentences(tokens_ref, sent_spans)
+            clean_strs = Strings(tokens_ref, clean_strs)
 
-            return CoreNLPAnnotations(tokens=tokens, pos=pos, lemmas=lemmas, sentences=sentences)
+            return CoreNLPAnnotations(tokens=tokens, pos=pos, lemmas=lemmas, sentences=sentences, clean_strs=clean_strs)
         except Exception as e:
             raise
-

@@ -4,6 +4,7 @@ import mung.data
 TYPE_TOKENS = "NLPTokens"
 TYPE_POS = "NLPPoS"
 TYPE_LEMMAS = "NLPLemmas"
+TYPE_STRINGS = "NLPStrings"
 TYPE_SENTENCES = "NLPSentences"
 
 class Annotator(object):
@@ -24,7 +25,7 @@ class Annotator(object):
     def annotate_data(self, data):
         annotated_data = []
         for i in range(data.get_size()):
-            print "Annotating " + data.get(i).get_id() + " (" + str(i+1) +  "/" + str(data.get_size()) + ")" 
+            print "Annotating " + data.get(i).get_id() + " (" + str(i+1) +  "/" + str(data.get_size()) + ")"
             annotated_data.append(self.annotate_datum(data.get(i)))
         return mung.data.DataSet(data=annotated_data)
 
@@ -60,7 +61,7 @@ class Annotation(object):
 class Tokens(Annotation):
     def __init__(self, target_ref, spans=[]):
         Annotation.__init__(self, target_ref)
-        
+
         self._spans = spans
         self._text = self.get_target()
 
@@ -87,7 +88,7 @@ class Tokens(Annotation):
     def from_dict(datum, obj):
         if not isinstance(obj, dict) or "type" not in obj or obj["type"] != TYPE_TOKENS:
             return None
-        
+
         target_ref = mung.data.DatumReference(datum, obj["target"])
         spans = [(span[0], span[1]) for span in obj["spans"]]
 
@@ -169,6 +170,33 @@ class Lemmas(TokensAnnotation):
 
         return Lemmas(target_ref, lemmas)
 
+class Strings(TokensAnnotation):
+    def __init__(self, target_ref, strs):
+        TokensAnnotation.__init__(self, target_ref)
+        self._strs = strs
+
+    def get_type(self):
+        return TYPE_STRINGS
+
+    def get(self, index):
+        return self._strs[index]
+
+    def to_dict(self):
+        obj = dict()
+        obj["type"] = TYPE_STRINGS
+        obj["target"] = self._target_ref.get_path()
+        obj["strs"] = self._strs
+        return obj
+
+    @staticmethod
+    def from_dict(datum, obj):
+        if not isinstance(obj, dict) or "type" not in obj or obj["type"] != TYPE_STRINGS:
+            return obj
+
+        target_ref = mung.data.DatumReference(datum, obj["target"])
+        strs = obj["strs"]
+
+        return Strings(target_ref, strs)
 
 class Sentences(Annotation):
     def __init__(self, target_ref, token_spans):
@@ -200,5 +228,3 @@ class Sentences(Annotation):
         spans = [(span[0], span[1]) for span in obj["token_spans"]]
 
         return Sentences(target_ref, token_spans)
-
-
