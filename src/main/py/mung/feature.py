@@ -17,10 +17,10 @@ FEATURE_TYPES = dict()
 FEATURE_SEQ_TYPES = dict()
 
 def register_feature_type(feature_type):
-    FEATURE_TYPES[feature_type.get_type()] = feature_type
+    FEATURE_TYPES[feature_type.__name__] = feature_type
 
 def register_feature_seq_type(feature_seq_type):
-    FEATURE_SEQ_TYPES[feature_seq_type.get_type()] = feature_seq_type
+    FEATURE_SEQ_TYPES[feature_seq_type.__name__] = feature_seq_type
 
 class ValueType:
     ENUMERABLE_ONE_HOT = 0
@@ -133,10 +133,6 @@ class FeatureType(object):
     def save(self, file_path):
         """ Save a representation of the feature to file """
 
-    @classmethod
-    def get_type(cls):
-        return cls.__name__
-
 
 class FeatureSequence(object):
     __metaclass__ = abc.ABCMeta
@@ -180,9 +176,6 @@ class FeatureSequence(object):
     def save(self, file_path):
         """ Save a representation of the feature sequence to file """
 
-    @classmethod
-    def get_type(cls):
-        return cls.__name__
 
 class FeatureMatrixToken(FeatureToken):
     def __init__(self, name, index):
@@ -243,7 +236,7 @@ class FeatureMatrixType(FeatureType):
 
     def save(self, file_path):
         obj = dict()
-        obj["type"] = self.get_type()
+        obj["type"] = "FeatureMatrixType"
         obj["name"] = self._name
         obj["matrix_fn"] = pickle.dumps(self._matrix_fn)
         obj["size"] = self._size
@@ -313,7 +306,7 @@ class FeatureMatrixSequence(FeatureSequence):
 
     def save(self, file_path):
         obj = dict()
-        obj["type"] = self.get_type()
+        obj["type"] = "FeatureMatrixSequence"
         obj["name"] = self._name
         obj["matrix_fn"] = pickle.dumps(self._matrix_fn)
         obj["sequence_length"] = self._sequence_length
@@ -596,7 +589,7 @@ class FeaturePathType(FeatureType):
 
     def save(self, file_path):
         obj = dict()
-        obj["type"] = self.get_type()
+        obj["type"] = "FeaturePathType"
         obj["name"] = self._name
         obj["paths"] = self._paths
         obj["min_occur"] = self._min_occur
@@ -718,7 +711,7 @@ class FeaturePathSequence(FeatureSequence):
 
     def save(self, file_path):
         obj = dict()
-        obj["type"] = self.get_type()
+        obj["type"] = "FeaturePathSequence"
         obj["name"] = self._name
         obj["paths"] = self._paths
         obj["seq_length"] = self._seq_length
@@ -967,8 +960,8 @@ class FeatureSequenceSet:
         for file_path in file_paths:
             with open(file_path, 'r') as fp:
                 obj = pickle.load(fp)
-                if obj["type"] in FEATURE_SEQ_TYPES
-                    feature_types.append(FEATURE_SEQ_TYPES[obj["type"]].from_dict(obj))
+                if obj["type"] in FEATURE_SEQ_TYPES:
+                    feature_seqs.append(FEATURE_SEQ_TYPES[obj["type"]].from_dict(obj))
                 else:
                     raise ValueError(obj["type"] + " feature sequence type not registered")
         return FeatureSequenceSet(feature_seqs=feature_seqs)
