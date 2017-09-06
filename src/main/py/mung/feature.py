@@ -1462,6 +1462,16 @@ class MultiviewDataSet:
     def get_size(self):
         return self._data.get_size()
 
+    def shuffle(self):
+        perm = self._data.shuffle()
+
+        for dfmat in self._dfmats.values():
+            dfmat.reorder(perm, preordered_data=self._data)
+
+        for dfmatseq in self._dfmatseqs.values():
+            dfmatseq.reorder(perm, preordered_data=self._data)
+
+
     def partition(self, partition, key_fn):
         data_parts = self._data.partition(partition, key_fn)
 

@@ -156,6 +156,7 @@ class DataSet:
         for i in range(len(perm)):
             shuffled_data.append(self._data[perm[i]])
         self._data = shuffled_data
+        return perm
 
     def split(self, sizes):
         datas = []
