@@ -68,8 +68,8 @@ class Datum:
         with open(join(dir_path, name), 'w') as fp:
             json.dump(self._properties, fp)
 
-    @staticmethod
-    def load(file_path, id_key="id"):
+    @classmethod
+    def load(cls, file_path, id_key="id"):
         with open(file_path, 'r') as fp:
             properties = json.load(fp)
             return Datum(properties=properties, id_key=id_key)
@@ -202,8 +202,8 @@ class DataSet:
                     for datum_dict in cur_batch:
                         fp.write(json.dumps(datum_dict) + "\n")
 
-    @staticmethod
-    def load(data_dir, id_key="id", order=None):
+    @classmethod
+    def load(cls, data_dir, id_key="id", order=None):
         D = DataSet(id_key=id_key, source_dir=data_dir)
         files = [join(data_dir, f) for f in listdir(data_dir) if isfile(join(data_dir, f))]
 
@@ -272,8 +272,8 @@ class Partition:
             obj["parts"] = self._parts
             json.dump(obj, fp)
 
-    @staticmethod
-    def load(file_path):
+    @classmethod
+    def load(cls, file_path):
         P = Partition()
         with open(file_path, 'r') as fp:
             obj = json.load(fp)

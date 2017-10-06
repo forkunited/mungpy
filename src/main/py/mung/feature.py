@@ -1169,7 +1169,7 @@ class DataFeatureMatrix:
         self._feature_set.save(feats_dir)
 
     @staticmethod
-    def load(dir_path, data=None):
+    def load(dir_path, data=None, data_cls=None):
         info_path = join(dir_path, "info")
         mat_path = join(dir_path, "mat.npy")
         feats_dir = join(dir_path, "feats")
@@ -1182,7 +1182,9 @@ class DataFeatureMatrix:
             obj = json.load(fp)
 
         if data is None:
-            data = DataSet.load(obj["data_dir"], id_key=obj["id_key"], order=obj["data_order"])
+            if data_cls is None:
+                data_cls = DataSet
+            data = data_cls.load(obj["data_dir"], id_key=obj["id_key"], order=obj["data_order"])
             return DataFeatureMatrix(data, feature_set, init_features=False, mat=mat, compute_non_zero=obj["compute_nz"])
         else:
             mat_id_to_index = dict()
@@ -1423,7 +1425,7 @@ class DataFeatureMatrixSequence:
             np.save(join(mats_dir, str(i)), self._dfmats[i].get_matrix())
 
     @staticmethod
-    def load(dir_path, data=None):
+    def load(dir_path, data=None, data_cls=None):
         info_path = join(dir_path, "info")
         mats_path = join(dir_path, "mats")
         feats_dir = join(dir_path, "feats")
@@ -1440,7 +1442,9 @@ class DataFeatureMatrixSequence:
             mats.append(np.load(join(mats_path, str(i) + ".npy")))
 
         if data is None:
-            data = DataSet.load(obj["data_dir"], id_key=obj["id_key"], order=obj["data_order"])
+            if data_cls is None:
+                data_cls = DataSet
+            data = data_cls.load(obj["data_dir"], id_key=obj["id_key"], order=obj["data_order"])
             return DataFeatureMatrixSequence(data, feature_seq_set, mats=mats, lengths=np.array(obj["lengths"]), mask=np.load(mask_path))
         else:
             mat_id_to_index = dict()
@@ -1599,9 +1603,13 @@ class MultiviewDataSet:
             return batch_dict
 
     @staticmethod
-    def load(data_path, dfmat_paths=dict(), dfmatseq_paths=dict()):
+    def load(data_path, dfmat_paths=dict(), dfmatseq_paths=dict(), data_cls=None):
         mv = MultiviewDataSet()
-        mv._data = DataSet.load(data_path)
+
+        if data_cls is None:
+            mv._data = DataSet.load(data_path)
+        else:
+            mv._data = data_cls.load(data_path)
 
         for name, path in dfmat_paths.iteritems():
             mv._dfmats[name] = DataFeatureMatrix.load(path, data=mv._data)
