@@ -1,11 +1,16 @@
 class UnaryRule:
-    def __init__(self):
-        pass
+    def __init__(self, name):
+        self._name = name
 
+    def get_name(self):
+        return self._name
 
 class BinaryRule:
-    def __init__(self):
-        pass
+    def __init__(self, name):
+        self._name = name
+
+    def get_name(self):
+        return self._name
 
 
 class RuleSet:

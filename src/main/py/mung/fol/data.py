@@ -3,6 +3,7 @@ import nltk
 import numpy as np
 from nltk.sem.logic import *
 import copy
+import mung.data
 
 class RelationalModel:
     def __init__(self, domain, properties, binary_rels, valuation):
@@ -10,7 +11,8 @@ class RelationalModel:
         self._properties = properties
         self._binary_rels = binary_rels
         self._model = nltk.Model(set(domain), nltk.Valuation(valuation))
-        
+        self._valuation = valuation 
+
         self._preds = dict()
         self._pred_sats = dict()
         for (pred, sats) in valuation:
@@ -34,7 +36,7 @@ class RelationalModel:
                 self._pred_sats[pred] = sat_set
 
     def evaluate(self, form, g):
-        return self._model.evaluate_exp(nltk.sem.Expression.fromstring(form), g)
+        return self.evaluate_exp(nltk.sem.Expression.fromstring(form), g)
 
     def evaluate_exp(self, exp, g):
         return self._model.satisfy(exp, g)
@@ -147,6 +149,45 @@ class RelationalModel:
 
         return assgns
 
+    def to_dict(self):
+        obj = dict()
+        obj["domain"] = self._domain
+        obj["properties"] = self._properties
+        obj["binary_rels"] = self._binary_rels
+
+        obj["valuation"] = dict()
+        for pair in self._valuation:
+            if pair[0] in self._domain:
+                obj["valuation"][pair[0]] = pair[1]
+            elif pair[0] in self._properties:
+                obj["valuation"][pair[0]] = list(pair[1])
+            elif pair[0] in self._binary_rels:
+                obj["valuation"][pair[0]] = []
+                for rel in pair[1]:
+                    obj["valuation"][pair[0]].append([rel[0], rel[1]])
+        return obj
+
+    @staticmethod
+    def from_dict(obj):
+        domain = obj["domain"]
+        properties = obj["properties"]
+        binary_rels = obj["binary_rels"]
+        valuation = obj["valuation"]        
+        v = []
+        for x in domain:
+            v.append(x, valuation[x])
+        for p in properties:
+            prop = valuation[p] 
+            v[p] = set([])
+            for el in prop:
+                v[p].add(el)
+        for r in binary_rels:
+            rel = valuation[r]
+            v[r] = set([])
+            for pair in rel:
+                v[r].add((pair[0], pair[1]))
+
+        return RelationalModel(domain, properties, binary_rels, v)
 
     @staticmethod
     def make_random(domain, properties, binary_rels):
@@ -325,7 +366,7 @@ class OpenFormula:
 
     def get_closed_forms(self):
         if self._closed_forms is None:
-            self._closed_forms = self._make_closed_forms(self._domain, self._form, self._variables, init_g)
+            self._closed_forms = self._make_closed_forms(self._domain, self._form, self._variables, self._init_g)
         return self._closed_forms
 
     def orthogonize(self, open_form):
@@ -485,3 +526,48 @@ class OpenFormula:
                 remp_map[svars[i] + "_p"] = svars[i]             
 
             return new_form.clone(var_map=smap).clone(var_map=remp_map)
+
+class Datum(mung.data.Datum):
+    def __init__(self, id, model, id_key="id"):
+        mung.data.Datum.__init__(self, properties={id_key : id, 'model' : model.to_dict() }, id_key=id_key)
+        self._model = model
+
+    def get_model(self):
+        return self._model
+
+    @staticmethod
+    def make_random_labeled(id, domain, properties, binary_rels, label_fn):
+        m = RelationalModel.make_random(domain, properties, binary_rels)
+        d = Datum(id, m)
+        d._properties["label"] = label_fn(d)
+        return d
+
+    @classmethod
+    def load(cls, file_path, id_key="id"):
+        with open(file_path, 'r') as fp:
+            properties = json.load(fp)
+            id = properties[id_key]
+            model = RelationalModel.from_dict(properties["model"])
+            return Datum(id, model, id_key=id_key) 
+
+
+class DataSet(mung.data.DataSet):
+    def __init__(self, data=[], id_key="id", source_dir=None):
+        mung.data.DataSet.__init__(self)
+
+    @staticmethod
+    def make_random_labeled(size, domain, properties, binary_rels, label_fn):
+        D = DataSet()
+        for i in range(0, size):
+            D._data.append(Datum.make_random_labeled(str(i), domain, properties, binary_rels, label_fn))
+        return D
+
+    @classmethod
+    def load(cls, data_dir, id_key="id", order=None):
+        data = mung.data.DataSet.load(data_dir, id_key=id_key, order=order)
+        logical_datums= []
+        for i in range(len(data)):
+            logical_datums.add(Datum(data[i].get_id(), RelationalModel.from_dict(data[i].get("model")), id_key=id_key))
+        logical_data = DataSet(data=logical_datums, id_key=id_key, source_dir=data._source_dir)
+        return logical_data
+

@@ -42,7 +42,7 @@ class FeatureFormIndicatorType(feature.FeatureType):
         expr = self._open_form.get_form()
         for i in range(len(closed_forms)):
             c = closed_forms[i]
-            if datum.get_model().evaluate(expr, c.get_g())
+            if datum.get_model().evaluate(expr, c.get_g()):
                 vec[start_index + i] = 1.0
             else:
                 vec[start_index + i] = 0.0

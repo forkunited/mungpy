@@ -3,8 +3,8 @@ from mung.fol import feature_form_indicator
 from mung import rule
 
 class UnaryRule(rule.UnaryRule):
-    def __init__(self, lhs_closed_form, rhs_open_form_fn):
-        rule.UnaryRule.__init__(self)
+    def __init__(self, name, lhs_closed_form, rhs_open_form_fn):
+        rule.UnaryRule.__init__(self, name)
         self._lhs_closed_form = lhs_closed_form
         self._rhs_open_form_fn = rhs_open_form_fn
 
@@ -26,12 +26,12 @@ class UnaryRule(rule.UnaryRule):
         if not self.matches(feature_token):
             return None
         open_forms = self._rhs_open_form_fn(feature_token.get_closed_form())
-        return [feature_form_indicator.FeatureFormIndicatorType(open_form) for open_form in open_forms]
+        return [feature_form_indicator.FeatureFormIndicatorType(feature_token.get_name() + "_" + self.get_name(), open_form) for open_form in open_forms]
 
 
 class BinaryRule(rule.BinaryRule):
-    def __init__(self, lhs_closed_form1, lhs_closed_form2, rhs_open_form_fn, ordered=False):
-        rule.BinaryRule.__init__(self)
+    def __init__(self, name, lhs_closed_form1, lhs_closed_form2, rhs_open_form_fn, ordered=False):
+        rule.BinaryRule.__init__(self, name)
         self._lhs_closed_form1 = lhs_closed_form1
         self._lhs_closed_form2 = lhs_closed_form2
         self._rhs_open_form_fn = rhs_open_form_fn
@@ -56,4 +56,5 @@ class BinaryRule(rule.BinaryRule):
         if not self.matches(feature_token1, feature_token2):
             return None
         open_forms = self._rhs_open_form_fn(feature_token1.get_closed_form(), feature_token2.get_closed_form())
-        return [feature_form_indicator.FeatureFormIndicatorType(open_form) for open_form in open_forms]
+        return [feature_form_indicator.FeatureFormIndicatorType(feature_token1.get_name() + "_" + feature_token2.get_name() + "_" + self.get_name(), open_form) for open_form in open_forms]
+

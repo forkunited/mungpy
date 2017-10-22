@@ -3,8 +3,8 @@ from mung.fol import feature_form_wextconj
 from mung import rule
 
 class BinaryJoinPropertyRule(rule.BinaryRule):
-    def __init__(self):
-        rule.BinaryRule.__init__(self)
+    def __init__(self, name):
+        rule.BinaryRule.__init__(self, name)
 
     def matches(self, feature_token1, feature_token2):
         if not isinstance(feature_token1, feature_form_wextconj.FeatureFormWextconjToken) or not isinstance(feature_token2, feature_form_wextconj.FeatureFormWextconjToken):
@@ -75,7 +75,7 @@ class BinaryJoinPropertyRule(rule.BinaryRule):
         conj_lists = [[conj] for conj in conjs]
         weight_fn = ftoken1.get_weight_fn()
 
-        return feature_form_wextconj.FeatureFormWextconjType(conj_lists, weight_fn)          
+        return feature_form_wextconj.FeatureFormWextconjType(ftoken1.get_name() + "_" + ftoken2.get_name() + "_" + self.get_name(), conj_lists, weight_fn)          
 
 
 

@@ -2,7 +2,7 @@ import time
 import copy
 import torch.nn.utils
 from torch.optim import Adam, Adadelta
-from mung.torch.eval import Evaluation
+from mung.torch_ext.eval import Evaluation
 
 class OptimizerType:
     ADAM = "ADAM"
@@ -43,10 +43,18 @@ class Trainer:
         best_result = float("inf")
         if self._max_evaluation:
             best_result = float("-inf")
-
         best_iteration = 0
-        if self._max_evaluation:
-            best_result = - best_result
+
+        # Initial evaluation
+        eval_start_time = time.time()
+        results = Evaluation.run_all(self._all_evaluations, model)
+        results["Model"] = model.get_name()
+        results["Iteration"] = 0
+        results["Avg batch time"] = 0.0
+        results["Evaluation time"] = time.time()-eval_start_time
+        results["Avg batch loss"] = 0.0
+        self._logger.log(results)
+        self._logger.save()
 
         b = 0
         for i in range(1, iterations + 1):
@@ -103,4 +111,4 @@ class Trainer:
 
         model.eval()
 
-        return model, best_part
+        return model, best_part, best_iteration
