@@ -553,7 +553,7 @@ class Datum(mung.data.Datum):
 
 class DataSet(mung.data.DataSet):
     def __init__(self, data=[], id_key="id", source_dir=None):
-        mung.data.DataSet.__init__(self)
+        mung.data.DataSet.__init__(self, data=data, id_key=id_key, source_dir=source_dir)
 
     @staticmethod
     def make_random_labeled(size, domain, properties, binary_rels, label_fn):

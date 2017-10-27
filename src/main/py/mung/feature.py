@@ -1459,10 +1459,17 @@ class DataFeatureMatrixSequence:
 
 
 class MultiviewDataSet:
-    def __init__(self):
-        self._data = None
-        self._dfmats = dict()
-        self._dfmatseqs = dict()
+    def __init__(self, data=None, dfmats=None, dfmatseqs=None):
+        self._data = data
+        if dfmats is None:
+            self._dfmats = dict()
+        else:
+            self._dfmats = dfmats
+
+        if dfmatseqs is None:
+            self._dfmatseqs = dict()
+        else:
+            self._dfmatseqs = dfmatseqs
 
     def __getitem__(self, key):
         if key in self._dfmats:

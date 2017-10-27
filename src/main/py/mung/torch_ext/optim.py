@@ -1,5 +1,5 @@
 import torch
-from .optimizer import Optimizer
+from torch.optim.optimizer import Optimizer
 
 # Modified Adagrad implementation from: 
 # https://github.com/pytorch/pytorch/blob/master/torch/optim/adagrad.py
@@ -30,6 +30,7 @@ class Adagrad(Optimizer):
                 state['step'] = 0
                 state['sum'] = p.data.new().resize_as_(p.data).zero_()
                 state['avg'] = p.data.new().resize_as_(p.data).zero_()
+                state['zeros'] = torch.zeros(state['avg'].size())
 
     def share_memory(self):
         for group in self.param_groups:
@@ -68,10 +69,10 @@ class Adagrad(Optimizer):
                 if group['l1_C'] != 0:
                     # l1 update.  See https://stanford.edu/~jduchi/projects/DuchiHaSi12_ismp.pdf
                     state['avg'].add_(1, grad)
-                    state['sum'].addmul_(1, grad, grad)
+                    state['sum'].addcmul_(1, grad, grad)
                     g_bar = state['avg'] / state['step']
                     adapt = state['sum'].sqrt().add(1e-10)
-                    sparsity = ((torch.abs(g_bar)-group['l1_C']) > 0.0).float()
+                    sparsity = torch.max(torch.abs(g_bar)-group['l1_C'], state['zeros'])
                     p.data = torch.sign(-g_bar)*(clr*state['step']/adapt)*sparsity
                 elif p.grad.data.is_sparse:
                     grad = grad.coalesce()  # the update is non-linear so indices must be unique

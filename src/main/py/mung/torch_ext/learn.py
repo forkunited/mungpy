@@ -2,11 +2,13 @@ import time
 import copy
 import torch.nn.utils
 from torch.optim import Adam, Adadelta
+from mung.torch_ext.optim import Adagrad
 from mung.torch_ext.eval import Evaluation
 
 class OptimizerType:
     ADAM = "ADAM"
     ADADELTA = "ADADELTA"
+    ADAGRAD_MUNG = "ADAGRAD_MUNG"
 
 class Trainer:
     def __init__(self, data_parameters, loss_criterion, logger, evaluation, other_evaluations=None, max_evaluation=False, sample_with_replacement=False):
@@ -20,13 +22,15 @@ class Trainer:
         if other_evaluations is not None:
             self._all_evaluations.extend(other_evaluations)
 
-    def train(self, model, data, iterations, batch_size=100, optimizer_type=OptimizerType.ADAM, lr=0.001, grad_clip=None, weight_decay=0.0, log_interval=100, best_part_fn=None):
+    def train(self, model, data, iterations, batch_size=100, optimizer_type=OptimizerType.ADAM, lr=0.001, grad_clip=None, weight_decay=0.0, log_interval=100, best_part_fn=None, l1_C=0):
         model.train()
         start_time = time.time()
 
         optimizer = None
         if optimizer_type == OptimizerType.ADAM:
             optimizer = Adam(model.parameters(), lr=lr, weight_decay=weight_decay)
+        elif optimizer_type == OptimizerType.ADAGRAD_MUNG:
+            optimizer = Adagrad(model.parameters(), lr=lr, lr_decay=0, weight_decay=weight_decay, l1_C=l1_C)
         else:
             optimizer = Adadelta(model.parameters(), rho=0.95, lr=lr, weight_decay=weight_decay)
 

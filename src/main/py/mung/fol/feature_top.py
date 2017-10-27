@@ -40,7 +40,7 @@ class FeatureTopType(feature.FeatureType):
         return FeatureTopToken(self._name)
 
     def __eq__(self, feature_type):
-        return isinstance(feature_type, FeatureTopType) and self._name = feature_type._name
+        return isinstance(feature_type, FeatureTopType) and self._name == feature_type._name
 
     def init_start(self):
         pass
