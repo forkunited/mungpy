@@ -1,5 +1,6 @@
 import abc
 import torch
+import numpy as np
 from torch.autograd import Variable
 
 EVALUATION_BATCH_SIZE = 100
@@ -16,13 +17,26 @@ class DataParameter:
 class Evaluation(object):
     __metaclass__ = abc.ABCMeta
 
-    def __init__(self, name, data, data_parameters):
+    def __init__(self, name, data, data_parameters, trials=1):
         super(Evaluation, self).__init__()
         self._name = name
         self._data = data
         self._data_parameters = data_parameters
+        self._trials = trials
 
     def run(self, model):
+        if self._trials == 1:
+            return self._run_once(model)
+        else:
+            results = np.zeros(self._trials)
+            for i in range(self._trials)
+                results[i] = self._run_once(model)
+            return np.mean(results), np.std(results)
+
+    def get_trials(self):
+        return self._trials
+
+    def _run_once(self, model):
         model.eval()
 
         batch_size = EVALUATION_BATCH_SIZE
@@ -65,12 +79,19 @@ class Evaluation(object):
     def run_all(evaluations, model):
         results = dict()
         for evaluation in evaluations:
-            results[evaluation.get_name()] = evaluation.run(model)
+            if evaluation.get_trials() == 1:
+                results[evaluation.get_name()] = evaluation.run(model)
+            else:
+                mean_name = evaluation.get_name() + " mean (n=" + str(evaluation.get_trials()) + ")"
+                std_name = evaluation.get_name() + " std (n=" + str(evaluation.get_trials()) + ")"
+                mean, std = evaluation.run(model)
+                results[mean_name] = mean
+                results[std_name] = std
         return results
 
 class Loss(Evaluation):
-    def __init__(self, name, data, data_parameters, loss_criterion, norm_dim=False):
-        super(Loss, self).__init__(name, data, data_parameters)
+    def __init__(self, name, data, data_parameters, loss_criterion, norm_dim=False, trials=1):
+        super(Loss, self).__init__(name, data, data_parameters, trials=trials)
         self._loss_criterion = loss_criterion
         self._norm_dim = norm_dim
 
@@ -100,8 +121,8 @@ class Loss(Evaluation):
             return result / self._data.get_size()
 
 class DistributionAccuracy(Evaluation):
-    def __init__(self, name, data, data_parameters, model_fn=None, target_indexed = False, check_unique = False):
-        super(DistributionAccuracy, self).__init__(name, data, data_parameters)
+    def __init__(self, name, data, data_parameters, model_fn=None, target_indexed = False, check_unique = False, trials=1):
+        super(DistributionAccuracy, self).__init__(name, data, data_parameters, trials=trials)
         self._model_fn = model_fn
         self._target_indexed = target_indexed
         self._check_unique = check_unique
