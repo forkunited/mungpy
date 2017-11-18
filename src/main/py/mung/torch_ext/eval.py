@@ -29,7 +29,7 @@ class Evaluation(object):
             return self._run_once(model)
         else:
             results = np.zeros(self._trials)
-            for i in range(self._trials)
+            for i in range(self._trials):
                 results[i] = self._run_once(model)
             return np.mean(results), np.std(results)
 
@@ -82,7 +82,7 @@ class Evaluation(object):
             if evaluation.get_trials() == 1:
                 results[evaluation.get_name()] = evaluation.run(model)
             else:
-                mean_name = evaluation.get_name() + " mean (n=" + str(evaluation.get_trials()) + ")"
+                mean_name = evaluation.get_name()
                 std_name = evaluation.get_name() + " std (n=" + str(evaluation.get_trials()) + ")"
                 mean, std = evaluation.run(model)
                 results[mean_name] = mean
