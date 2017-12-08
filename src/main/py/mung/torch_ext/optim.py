@@ -20,12 +20,16 @@ class Adagrad(Optimizer):
         Optimization: http://jmlr.org/papers/v12/duchi11a.html
     """
 
-    def __init__(self, params, lr=1e-2, lr_decay=0, weight_decay=0, l1_C=0, no_bias_l1=True):
+    def __init__(self, params, lr=1e-2, lr_decay=0, weight_decay=0, l1_C=0, no_bias_l1=True, no_non_singleton_l1=True):
         defaults = dict(lr=lr, lr_decay=lr_decay, weight_decay=weight_decay, l1_C=l1_C)
         super(Adagrad, self).__init__(params, defaults)
 
         self._no_bias_l1 = no_bias_l1
+        self._no_non_singleton_l1 = no_non_singleton_l1
 
+        self.reset()
+
+    def reset(self):
         for group in self.param_groups:
             for p in group['params']:
                 state = self.state[p]
@@ -33,6 +37,16 @@ class Adagrad(Optimizer):
                 state['sum'] = p.data.new().resize_as_(p.data).zero_()
                 state['avg'] = p.data.new().resize_as_(p.data).zero_()
                 state['zeros'] = torch.zeros(state['avg'].size())
+                if p.is_cuda:
+                    state['zeros'] = state['zeros'].cuda()
+
+    def get_step(self):
+        for group in self.param_groups:
+            for p in group['params']:
+                state = self.state[p]
+                if 'step' in state:
+                    return state['step']
+        return None
 
     def share_memory(self):
         for group in self.param_groups:
@@ -50,7 +64,6 @@ class Adagrad(Optimizer):
         loss = None
         if closure is not None:
             loss = closure()
-
         for group in self.param_groups:
             for p in group['params']:
                 if p.grad is None:
@@ -67,9 +80,8 @@ class Adagrad(Optimizer):
                     grad = grad.add(group['weight_decay'], p.data)
 
                 clr = group['lr'] / (1 + (state['step'] - 1) * group['lr_decay'])
-
-                if group['l1_C'] != 0 and ((not self._no_bias_l1) or (len(p.data.size()) > 1 or p.data.size(0) > 1)): 
-                    # FIXME Note this is a hack to not regularize biases
+                if group['l1_C'] != 0 and ((not self._no_bias_l1) or (len(p.data.size()) > 1 or p.data.size(0) > 1) and ((not self._no_non_singleton_l1) or p.data.size(0) == 1)): 
+                    # FIXME Note this is a hack to not regularize biases and non-single unit layers
                     # l1 update.  See https://stanford.edu/~jduchi/projects/DuchiHaSi12_ismp.pdf
                     state['avg'].add_(1, grad)
                     state['sum'].addcmul_(1, grad, grad)

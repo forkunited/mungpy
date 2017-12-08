@@ -34,13 +34,17 @@ class Trainer:
         else:
             optimizer = Adadelta(model.parameters(), rho=0.95, lr=lr, weight_decay=weight_decay)
 
+        set_optimizer = getattr(model, "set_optimizer", None)
+        if callable(set_optimizer):
+            set_optimizer(optimizer)
+
         total_loss = 0.0
 
         self._logger.set_key_order(["Model", "Iteration", "Avg batch time", "Evaluation time", "Avg batch loss"])
 
         best_part = None
         if best_part_fn is None:
-            best_part = copy.deepcopy(model)
+            best_part = copy.deepcopy(model.cpu())
         else:
             best_part = copy.deepcopy(best_part_fn(model))
 
@@ -105,7 +109,7 @@ class Trainer:
                     ((not self._max_evaluation) and main_result < best_result):
                     best_result = main_result
                     if best_part_fn is None:
-                        best_part = copy.deepcopy(model)
+                        best_part = copy.deepcopy(model.cpu())
                     else:
                         best_part = copy.deepcopy(best_part_fn(model))
                     best_iteration = i
