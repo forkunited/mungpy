@@ -163,3 +163,27 @@ class DistributionAccuracy(Evaluation):
 
     def _finalize_result(self, result):
         return result / self._data.get_size()
+
+
+class ModelStatistic(Evaluation):
+    def __init__(self, name, data, data_parameters, stat_fn, trials=1):
+        super(ModelStatistic, self).__init__(name, data, data_parameters, trials=trials)
+        self._stat_fn = stat_fn
+
+    def _run_once(self, model):
+        model.eval()
+        stat = self._stat_fn(model)
+        model.train()
+        return stat
+
+    def _run_batch(self, model, batch):
+        pass
+
+    def _aggregate_batch(self, agg, batch_result):
+        pass
+
+    def _initialize_result(self):
+        pass
+
+    def _finalize_result(self, result):
+        pass
