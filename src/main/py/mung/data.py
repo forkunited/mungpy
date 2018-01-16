@@ -284,3 +284,18 @@ class Partition:
             P._size = obj["size"]
             P._parts = obj["parts"]
         return P
+
+    @classmethod
+    def make(D, sizes, part_names, key_fn):
+        P = Partition()
+        D_parts = D.split(sizes)
+
+        P._keep_data = False
+        P._size =  D.get_size()
+        P._parts = dict()
+
+        for i in range(len(part_names)):
+            P._parts[part_names[i]] = dict()
+            for datum in D_parts[i]:
+                P._parts[part_names[i]][key_fn(datum)] = 1
+        return P
