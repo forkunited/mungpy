@@ -286,7 +286,7 @@ class Partition:
         return P
 
     @classmethod
-    def make(D, sizes, part_names, key_fn):
+    def make(cls, D, sizes, part_names, key_fn):
         P = Partition()
         D_parts = D.split(sizes)
 
