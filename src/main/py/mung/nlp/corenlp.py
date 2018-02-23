@@ -13,13 +13,15 @@ class CoreNLPAnnotations:
     KEY_LEMMAS = "lemmas"
     KEY_SENTENCES = "sents"
     KEY_CLEAN_STRINGS = "clean_strs"
+    KEY_TOKEN_STRINGS = "token_strs"
 
-    def __init__(self, tokens=None, pos=None, lemmas=None, sentences=None, clean_strs=None):
+    def __init__(self, tokens=None, pos=None, lemmas=None, sentences=None, clean_strs=None, token_strs=None):
         self._tokens = tokens
         self._pos = pos
         self._lemmas = lemmas
         self._sentences = sentences
         self._clean_strs = clean_strs
+        self._token_strs = token_strs
 
     def to_dict(self):
         obj = dict()
@@ -35,6 +37,8 @@ class CoreNLPAnnotations:
             obj[self.KEY_SENTENCES] = self._sentences.to_dict()
         if self._clean_strs is not None:
             obj[self.KEY_CLEAN_STRINGS] = self._clean_strs.to_dict()
+        if self._token_strs is not None:
+            obj[self.KEY_TOKEN_STRINGS] = self._token_strs.to_dict()
 
         return obj
 
@@ -62,7 +66,12 @@ class CoreNLPAnnotations:
         clean_strs = None
         if self.KEY_CLEAN_STRINGS in obj:
             clean_strs = Strings.from_dict(datum, obj[self.KEY_CLEAN_STRINGS])
-        return CoreNLPAnnotations(tokens=tokens, pos=pos, lemmas=lemmas, sentences=sentences, clean_strs=clean_strs)
+
+        token_strs = None
+        if self.KEY_TOKEN_STRINGS in obj:
+            token_strs = Strings.from_dict(datum, obj[self.KEY_TOKEN_STRINGS])
+
+        return CoreNLPAnnotations(tokens=tokens, pos=pos, lemmas=lemmas, sentences=sentences, clean_strs=clean_strs, token_strs=token_strs)
 
 
 class CoreNLPAnnotator(Annotator):
@@ -104,6 +113,7 @@ class CoreNLPAnnotator(Annotator):
             lemma_strs = []
             pos_strs = []
             clean_strs = []
+            token_strs = []
             if isinstance(ann, basestring):
                 ann = json.loads(ann.replace('\x00', '?').encode('latin-1'), encoding='utf-8', strict=True)
 
@@ -115,6 +125,8 @@ class CoreNLPAnnotator(Annotator):
                     pos_strs.append(token['pos'])
 
                     token_text = text[token["characterOffsetBegin"]:token["characterOffsetEnd"]]
+                    token_strs.append(token_text)
+
                     token_text = token_text.lower()
                     if token_text.endswith("er"):
                         clean_strs.append(token_text[:-2])
@@ -136,7 +148,8 @@ class CoreNLPAnnotator(Annotator):
             lemmas = Lemmas(tokens_ref, lemma_strs)
             sentences = Sentences(tokens_ref, sent_spans)
             clean_strs = Strings(tokens_ref, clean_strs)
+            token_strs = Strings(tokens_ref, token_strs)
 
-            return CoreNLPAnnotations(tokens=tokens, pos=pos, lemmas=lemmas, sentences=sentences, clean_strs=clean_strs)
+            return CoreNLPAnnotations(tokens=tokens, pos=pos, lemmas=lemmas, sentences=sentences, clean_strs=clean_strs, token_strs=token_strs)
         except Exception as e:
             raise
