@@ -1,6 +1,7 @@
 import time
 import copy
 import torch.nn.utils
+from itertools import ifilter
 from torch.optim import Adam, Adadelta
 from mung.torch_ext.optim import Adagrad
 from mung.torch_ext.eval import Evaluation
@@ -28,11 +29,11 @@ class Trainer:
 
         optimizer = None
         if optimizer_type == OptimizerType.ADAM:
-            optimizer = Adam(model.parameters(), lr=lr, weight_decay=weight_decay)
+            optimizer = Adam(ifilter(lambda p: p.requires_grad, model.parameters()), lr=lr, weight_decay=weight_decay)
         elif optimizer_type == OptimizerType.ADAGRAD_MUNG:
-            optimizer = Adagrad(model.parameters(), lr=lr, lr_decay=0, weight_decay=weight_decay, l1_C=l1_C)
+            optimizer = Adagrad(ifilter(lambda p: p.requires_grad, model.parameters()), lr=lr, lr_decay=0, weight_decay=weight_decay, l1_C=l1_C)
         else:
-            optimizer = Adadelta(model.parameters(), rho=0.95, lr=lr, weight_decay=weight_decay)
+            optimizer = Adadelta(ifilter(lambda p: p.requires_grad, model.parameters()), rho=0.95, lr=lr, weight_decay=weight_decay)
 
         set_optimizer = getattr(model, "set_optimizer", None)
         if callable(set_optimizer):
