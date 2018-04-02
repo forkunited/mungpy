@@ -146,3 +146,42 @@ def featurize_path_scalars(input_data_dir, output_feature_dir, partition_file,
 
     mat = DataFeatureMatrix(data_full, feat_set, init_features=False)
     mat.save(output_feature_dir)
+
+
+def featurize_matrix_seq(input_data_dir, output_feature_dir, partition_file,
+                             partition_fn, feature_name, matrix_fn, length_fn, max_length,
+                             feature_size, init_data="train"):
+    """
+    Constructs matrix sequence features for a data set, and saves the
+    resulting matrices to a directory
+
+    Args:
+        input_data_dir (:obj:`str`): Path to input data directory
+        output_feature_dir (:obj:`str`): Path to output feature matrix directory
+        partition_file (:obj:`str`): Path to file representing a partition of
+            the data
+        partition_fn (:obj:`data.Datum` -> :obj:`str`): Function to apply to
+            data to construct keys on which to partition according to the
+            partition loaded from partion_file
+        feature_name (:obj:`str`): Name by which the feature will be referenced
+        matrix_fn (:obj:`data.Datum` -> :obj:array_type): Function applied to
+        each datum to produce matrices representing vector sequences
+        length_fn (:obj:`data.Datum` -> int): Function applied to each datum to produce
+        sequence lengths
+        max_length (int): Maximum length of a sequence constructed for a datum.
+            Sequences exceeding maximum length will be truncated
+        init_data (:obj:`str`, optional): Name of the part of the partition to
+            use to initialize the vocabulary for the feature (Defaults to
+            "train")
+        feature_size (int): Number of features per sequence element
+    """
+    partition = Partition.load(partition_file)
+    data_full = DataSet.load(input_data_dir)
+    data_parts = data_full.partition(partition, partition_fn)
+
+    feat_seq = FeatureMatrixSequence(feature_name, matrix_fn, length_fn, max_length, feature_size)
+    feat_seq_set = FeatureSequenceSet(feature_seqs=[feat_seq])
+    feat_seq_set.init(data_parts[init_data])
+
+    mat = DataFeatureMatrixSequence(data_full, feat_seq_set, init_features=False)
+    mat.save(output_feature_dir)

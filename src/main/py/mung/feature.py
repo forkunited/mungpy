@@ -259,9 +259,10 @@ class FeatureMatrixType(FeatureType):
 
 
 class FeatureMatrixSequence(FeatureSequence):
-    def __init__(self, name, matrix_fn, sequence_length, feature_size):
+    def __init__(self, name, matrix_fn, length_fn, sequence_length, feature_size):
         FeatureSequence.__init__(self)
         self._name = name
+        self._length_fn = length_fn
         self._matrix_fn = matrix_fn
         self._sequence_length = sequence_length
         self._feature_size = feature_size
@@ -285,7 +286,7 @@ class FeatureMatrixSequence(FeatureSequence):
         return True
 
     def get_datum_length(self, datum):
-        raise NotImplementedError()
+        return self._length_fn(datum)
 
     def get_name(self):
         return self._name
@@ -310,6 +311,7 @@ class FeatureMatrixSequence(FeatureSequence):
         obj["type"] = "FeatureMatrixSequence"
         obj["name"] = self._name
         obj["matrix_fn"] = pickle.dumps(self._matrix_fn)
+        obj["length_fn"] = pickle.dumps(self._length_fn)
         obj["sequence_length"] = self._sequence_length
         obj["feature_size"] = self._feature_size
         with open(file_path, 'w') as fp:
@@ -325,9 +327,10 @@ class FeatureMatrixSequence(FeatureSequence):
     def from_dict(obj):
         name = obj["name"]
         matrix_fn = pickle.loads(obj["matrix_fn"])
+        length_fn = pickle.loads(obj["length_fn"])
         sequence_length = obj["sequence_length"]
         feature_size = obj["feature_size"]
-        return FeatureMatrixSequence(name, matrix_fn, sequence_length, feature_size)
+        return FeatureMatrixSequence(name, matrix_fn, length_fn, sequence_length, feature_size)
 
 
 class FeaturePathToken(FeatureToken):
