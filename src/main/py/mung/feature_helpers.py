@@ -3,7 +3,7 @@ Helper functions for constructing and saving feature matrices
 """
 
 from mung.data import DataSet, Datum, Partition
-from mung.feature import (FeaturePathType, FeaturePathSequence,
+from mung.feature import (FeaturePathType, FeaturePathSequence, FeatureMatrixSequence,
                          FeatureSet, FeatureSequenceSet,
                          DataFeatureMatrix, DataFeatureMatrixSequence,
                          ValueType)

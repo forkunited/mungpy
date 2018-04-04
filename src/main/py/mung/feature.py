@@ -271,12 +271,12 @@ class FeatureMatrixSequence(FeatureSequence):
         for i in range(self._sequence_length):
             def vector_fn(datum):
                 mat = matrix_fn(datum)
-                if i >= mat.shape()[0]:
+                if i >= mat.shape[0]:
                     return np.zeros(self._feature_size)
                 else:
                     return mat[i]
 
-            self._types.append(FeatureMatrixType(self, self._name + "." + str(i), vector_fn, self._feature_size))
+            self._types.append(FeatureMatrixType(self._name + "." + str(i), vector_fn, self._feature_size))
 
     def __eq__(self, feature_seq):
         if not isinstance(feature_seq, FeatureMatrixSequence):
