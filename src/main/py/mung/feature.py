@@ -1594,11 +1594,15 @@ class MultiviewDataSet:
         if mat_views is None:
             mat_views = self._dfmats.keys()
         if seq_views is None:
-            seq_views = sorted(self._dfmatseqs.keys())
+            seq_views = self._dfmatseqs.keys()
+            if self._ordering_seq is None:
+                ordering_view = seq_views[0]
+            else:
+                ordering_view = self._ordering_seq
 
         # NOTE: Batches are sorted on the lengths of the first seq_view
         if sort_lengths and len(seq_views) > 0:
-            lengths = self._dfmatseqs[seq_views[0]].get_lengths_by_indices(batch_indices)
+            lengths = self._dfmatseqs[ordering_view].get_lengths_by_indices(batch_indices)
             bls = [(batch_indices, lengths) for (batch_indices,lengths)
                     in sorted(zip(batch_indices, lengths), key=lambda p: -p[1])]
             batch_indices = np.array([bl[0] for bl in bls])
