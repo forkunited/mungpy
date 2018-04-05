@@ -1592,7 +1592,7 @@ class MultiviewDataSet:
         if mat_views is None:
             mat_views = self._dfmats.keys()
         if seq_views is None:
-            seq_views = self._dfmatseqs.keys()
+            seq_views = sorted(self._dfmatseqs.keys())
 
         # NOTE: Batches are sorted on the lengths of the first seq_view
         if sort_lengths and len(seq_views) > 0:
