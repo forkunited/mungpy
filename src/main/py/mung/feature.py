@@ -200,14 +200,18 @@ class FeatureMatrixToken(FeatureToken):
         pass
 
 class FeatureMatrixType(FeatureType):
-    def __init__(self, name, matrix_fn, size):
+    def __init__(self, name, matrix_fn, size, index=None):
         FeatureType.__init__(self)
         self._name = name
         self._matrix_fn = matrix_fn
         self._size = size
+        self._index = index
 
     def compute(self, datum, vec, start_index):
-        vec[start_index:start_index+self._size] = self._matrix_fn(datum).flatten()
+        if self._index is None:
+            vec[start_index:start_index+self._size] = self._matrix_fn(datum).flatten()
+        else:
+            vec[start_index:start_index+self._size] = self._matrix_fn(datum, self._index).flatten()
         return vec
 
     def get_name(self):
@@ -241,6 +245,10 @@ class FeatureMatrixType(FeatureType):
         obj["name"] = self._name
         obj["matrix_fn"] = pickle.dumps(self._matrix_fn)
         obj["size"] = self._size
+
+        if self._index is not None:
+            obj["index"] = self._index
+
         with open(file_path, 'w') as fp:
             json.dump(obj, fp)
 
@@ -255,7 +263,11 @@ class FeatureMatrixType(FeatureType):
         name = obj["name"]
         matrix_fn = pickle.loads(obj["matrix_fn"])
         size = obj["size"]
-        return FeatureMatrixType(name, matrix_fn, size)
+        index = None
+        if "index" in obj:
+            index = obj["index"]
+
+        return FeatureMatrixType(name, matrix_fn, size, index=index)
 
 
 class FeatureMatrixSequence(FeatureSequence):
@@ -269,14 +281,14 @@ class FeatureMatrixSequence(FeatureSequence):
 
         self._types = []
         for i in range(self._sequence_length):
-            def vector_fn(datum):
+            def vector_fn(datum, index):
                 mat = matrix_fn(datum)
-                if i >= mat.shape[0]:
+                if index >= mat.shape[0]:
                     return np.zeros(self._feature_size)
                 else:
-                    return mat[i]
+                    return mat[index]
 
-            self._types.append(FeatureMatrixType(self._name + "." + str(i), vector_fn, self._feature_size))
+            self._types.append(FeatureMatrixType(self._name + "." + str(i), vector_fn, self._feature_size, index=i))
 
     def __eq__(self, feature_seq):
         if not isinstance(feature_seq, FeatureMatrixSequence):
@@ -1620,8 +1632,8 @@ class MultiviewDataSet:
             return batch_dict
 
     @staticmethod
-    def load(data_path, dfmat_paths=dict(), dfmatseq_paths=dict(), data_cls=None):
-        mv = MultiviewDataSet()
+    def load(data_path, dfmat_paths=dict(), dfmatseq_paths=dict(), data_cls=None, ordering_seq=None):
+        mv = MultiviewDataSet(ordering_seq=ordering_seq)
 
         if data_cls is None:
             mv._data = DataSet.load(data_path)
