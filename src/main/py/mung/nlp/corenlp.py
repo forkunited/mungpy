@@ -1,3 +1,4 @@
+import string
 from pycorenlp import StanfordCoreNLP
 from mung.data import DatumReference
 from mung.nlp.annotation import Tokens, PoS, Lemmas, Sentences, Strings, Annotator
@@ -78,6 +79,7 @@ class CoreNLPAnnotator(Annotator):
     def __init__(self, target_path, target_key, store_key):
         Annotator.__init__(self, target_path, target_key, store_key)
         self._nlp = StanfordCoreNLP('http://localhost:{}'.format(STANFORD_NLP_PORT))
+        self._printable = set(string.printable)
 
     def __str__(self):
         return "corenlp-3.6+"
@@ -85,7 +87,7 @@ class CoreNLPAnnotator(Annotator):
     def _annotate_in_place(self, datum):
         targets = datum.get(self._target_path, first=False, include_paths=True)
         for (target_path, target) in targets:
-            text = str(target[self._target_key])
+            text = str(filter(lambda x: x in self._printable, target[self._target_key]))
             annos = self._annotate_text(datum, text, target_path)
             obj = annos.to_dict()
             datum.set(self._store_key, obj, path=target_path)
