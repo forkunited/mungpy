@@ -3,7 +3,7 @@ import torch
 import numpy as np
 from torch.autograd import Variable
 
-EVALUATION_BATCH_SIZE = 100 #16 #10 #100
+EVALUATION_BATCH_SIZE = 64 #16 #10 #100
 
 class DataParameter:
     TARGET = "target"
