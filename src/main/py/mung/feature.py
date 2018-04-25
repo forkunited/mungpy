@@ -23,6 +23,12 @@ def register_feature_type(feature_type):
 def register_feature_seq_type(feature_seq_type):
     FEATURE_SEQ_TYPES[feature_seq_type.__name__] = feature_seq_type
 
+class SubsetType:
+    RANDOM = "RANDOM"
+    FIRST = "FIRST"
+    FILTER = "FILTER"
+    PARTITION = "PARTITION"
+
 class ValueType:
     ENUMERABLE_ONE_HOT = 0
     ENUMERABLE_INDEX = 1
@@ -1647,6 +1653,60 @@ class MultiviewDataSet:
             mv._dfmatseqs[name] = DataFeatureMatrixSequence.load(path, data=mv._data)
 
         return mv
+
+    # Expects config of the form:
+    # {
+    #   data_path : [PATH TO DATA SET]
+    #   mats : {
+    #     dfmat_paths : [DICTIONARY OF DFMAT PATHS]
+    #     dfmatseq_paths : [DICTIONARY OF DFMATSEQ PATHS]
+    #     ordering_seq : [FEATURESEQ NAME TO ORDER BATCHES BY]
+    #   },
+    #   (optional) subsets : [
+    #     name : {
+    #       type : [RANDOM|FIRST|FILTER|PARTITION]
+    #       size : [SUBSET SIZE] (if RANDOM or FIRST)
+    #       file : [PARTITION FILE] (if PARTITION)
+    #       key : [PARTITION ID KEY] (if PARTITION)
+    #       parts : [DICTIONARY OF PART NAMES] (if PARTITION)
+    #       filter : [FILTER DICTIONARY] (if FILTER)
+    #       (optional) superset : Name of the set to take a subset of
+    #     ]
+    #   }
+    # }
+    @staticmethod
+    def load_from_config(config):
+        data_path = config["data_path"]
+        mats = config["mats"]
+        D = MultiviewDataSet.load(data_path, **mats)
+        S = dict()
+        if "subsets" in config:
+            for item in config["subsets"]:
+                D_cur = D
+                if "superset" in item:
+                    D_cur = S[item[subset]]
+
+                if item["type"] == SubsetType.RANDOM:
+                    S[key] = D_cur.get_random_subset(int(item["size"]))
+                elif item["type"] == SubsetType.FIRST:
+                    S[key] = D_cur.get_subset(0, int(item["size"]))
+                elif item["type"] == SubsetType.PARTITION:
+                    P = Partition.load(item["file"])
+                    id_key = "id"
+                    if "key" in item:
+                        id_key = item["key"]
+                    D_parts = D.partition(partition, lambda d : d.get(id_key))
+                    for part_key, part in D_parts.iteritems():
+                        if part_key in item["parts"]:
+                            S[item["parts"][part_key]] = part
+                else: # FILTER
+                    def f(d):
+                        d_match = True
+                        for d_key, d_value in d.iteritems():
+                            d_match = (d_match and d[d_key] == d_value)
+                        return d_match
+                    S[key] = D_cur.filter(f)
+        return D, S
 
 register_feature_type(FeaturePathType)
 register_feature_type(FeatureMatrixType)
