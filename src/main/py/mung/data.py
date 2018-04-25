@@ -265,7 +265,7 @@ class Partition:
         return name in self._parts and value in self._parts[name]
 
     def union(self, other_part):
-        if self._keep_data != other_part.keep_data:
+        if self._keep_data != other_part._keep_data:
             raise ValueError("Cannot merge a data-included partition with a data-removed partition.")
         P = Partition()
         P._keep_data = self._keep_data
@@ -273,7 +273,7 @@ class Partition:
         for key in self._parts.keys():
             P._parts[key] = self._parts[key].copy()
         for key in other_part._parts.keys():
-            if key not P._parts:
+            if key not in P._parts:
                 P._parts[key] = dict()
             for item in other_part._parts[key].keys():
                 if item in P._parts[key]:
