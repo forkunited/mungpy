@@ -7,7 +7,7 @@ import os.path
 import torch
 from torch.autograd import Variable
 from mung import data
-from mung.data import DataSet
+from mung.data import DataSet, Partition
 from bidict import bidict
 from collections import Counter
 from os.path import join, isfile
@@ -1663,7 +1663,7 @@ class MultiviewDataSet:
     #     ordering_seq : [FEATURESEQ NAME TO ORDER BATCHES BY]
     #   },
     #   (optional) subsets : [
-    #     name : {
+    #       name : [NAME]
     #       type : [RANDOM|FIRST|FILTER|PARTITION]
     #       size : [SUBSET SIZE] (if RANDOM or FIRST)
     #       file : [PARTITION FILE] (if PARTITION)
@@ -1684,28 +1684,29 @@ class MultiviewDataSet:
             for item in config["subsets"]:
                 D_cur = D
                 if "superset" in item:
-                    D_cur = S[item[subset]]
+                    D_cur = S[item["superset"]]
 
                 if item["type"] == SubsetType.RANDOM:
-                    S[key] = D_cur.get_random_subset(int(item["size"]))
+                    S[item["name"]] = D_cur.get_random_subset(int(item["size"]))
                 elif item["type"] == SubsetType.FIRST:
-                    S[key] = D_cur.get_subset(0, int(item["size"]))
+                    S[item["name"]] = D_cur.get_subset(0, int(item["size"]))
                 elif item["type"] == SubsetType.PARTITION:
                     P = Partition.load(item["file"])
                     id_key = "id"
                     if "key" in item:
                         id_key = item["key"]
-                    D_parts = D.partition(partition, lambda d : d.get(id_key))
+                    D_parts = D.partition(P, lambda d : d.get(id_key))
                     for part_key, part in D_parts.iteritems():
                         if part_key in item["parts"]:
                             S[item["parts"][part_key]] = part
                 else: # FILTER
+                    subset_filter = item["filter"]
                     def f(d):
                         d_match = True
-                        for d_key, d_value in d.iteritems():
-                            d_match = (d_match and d[d_key] == d_value)
+                        for d_key, d_value in subset_filter.iteritems():
+                            d_match = (d_match and d.get(d_key) == d_value)
                         return d_match
-                    S[key] = D_cur.filter(f)
+                    S[item["name"]] = D_cur.filter(f)
         return D, S
 
 register_feature_type(FeaturePathType)

@@ -13,6 +13,9 @@ class Config:
     def __contains__(self, key):
         return (key in self._properties)
 
+    def __iter__(self):
+        return iter(self._properties)
+
     def get_dict(self):
         return self._properties
 
@@ -31,17 +34,18 @@ class Config:
                 item = properties[key]
                 if isinstance(item, basestring):
                     properties[key] = self._set_str_environment(item, environment)
-                else
+                else:
                     self._set_properties_environment(item, environment)
 
     def _set_str_environment(self, s, environment):
-        for key, value in environment.iteritems():
-            s = s.replace("$!{" + key + "}", value)
+        for key in environment:
+            s = s.replace("$!{" + key + "}", environment[key])
         return s
 
     @staticmethod
     def load(properties_file, environment=None):
-        with open(properties_file, 'w') as fp:
-            json.load(properties, fp)
+        properties = None
+        with open(properties_file, 'r') as fp:
+            properties = json.load(fp)
 
         return Config(properties, environment=environment)
