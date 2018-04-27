@@ -42,10 +42,44 @@ class Config:
             s = s.replace("$!{" + key + "}", environment[key])
         return s
 
+    def merge(self, other_config):
+        environment = None
+        if self._environment is not None or other_config._environment is not None:
+            environment = dict()
+            if self._environment is not None:
+                for key in self._environment:
+                    environment[key] = self._environment[key]
+            if other_config._environment is not None:
+                for key in other_config._environment:
+                    environment[key] = other_config._environment[key]
+        
+        properties = dict()
+        for key in self._properties:
+            properties[key] = self._properties[key]
+        for key in other_config._properties:
+            properties[key] = other_config._properties[key]
+
+        return Config(properties, environment=environment)
+
     @staticmethod
     def load(properties_file, environment=None):
         properties = None
         with open(properties_file, 'r') as fp:
             properties = json.load(fp)
+
+        return Config(properties, environment=environment)
+
+    @staticmethod
+    def load_from_list(args_list, environment=None):
+        properties = dict()
+
+        if args_list % 2 != 0:
+            raise ValueError("Args list must be even length to parse into config")
+
+        for i in range(len(args_list)/2):
+            arg_name = args_list[i*2].replace("--", "").replace("-", "")
+            arg_value = args_list[i*2+1]
+
+            properties[arg_name] = arg_value
 
         return Config(properties, environment=environment)
