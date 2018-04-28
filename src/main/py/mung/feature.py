@@ -857,6 +857,12 @@ class FeatureSet:
         for feature_type in self._feature_types:
             feature_type.save(join(dir_path, feature_type.get_name()))
 
+    def make_token_lookup(self):
+        lookup = dict()
+        for i in range(self.get_token_count()):
+            lookup[self.get_feature_token(i).get_value()] = i
+        return lookup
+
     @staticmethod
     def load(dir_path):
         file_paths = [join(dir_path, f) for f in listdir(dir_path) if isfile(join(dir_path, f))]
@@ -965,7 +971,7 @@ class FeatureSequenceSet:
     def get_feature_seq(self, index):
         return self._feature_seqs[index]
 
-    def get_feature_set(self, index):
+    def get_feature_set(self, index=0):
         return self._feature_sets[index]
 
     def copy(self):
