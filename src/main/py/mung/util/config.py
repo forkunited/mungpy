@@ -73,7 +73,7 @@ class Config:
     def load_from_list(args_list, environment=None):
         properties = dict()
 
-        if args_list % 2 != 0:
+        if len(args_list) % 2 != 0:
             raise ValueError("Args list must be even length to parse into config")
 
         for i in range(len(args_list)/2):

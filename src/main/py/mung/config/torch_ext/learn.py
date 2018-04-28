@@ -23,7 +23,7 @@ def train_from_config(config, data_parameter, loss_criterion, logger, evaluation
             evaluations[0], other_evaluations=evaluations[1:len(evaluations)], \
             max_evaluation=bool(int(config["max_evaluation"])))
     
-    iterations = int(config["training_iterations"])
+    iterations = int(config["iterations"])
     batch_size = int(config["batch_size"])
     optimizer_type = config["optimizer_type"]
     learning_rate = float(config["learning_rate"])
