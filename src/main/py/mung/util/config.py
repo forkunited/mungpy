@@ -83,3 +83,8 @@ class Config:
             properties[arg_name] = arg_value
 
         return Config(properties, environment=environment)
+
+    @staticmethod
+    def load_from_dict(d, environment=None):
+        properties = dict(d)
+        return Config(properties, environment=environment)
