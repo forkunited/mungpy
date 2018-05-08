@@ -17,12 +17,13 @@ class DataParameter:
 class Evaluation(object):
     __metaclass__ = abc.ABCMeta
 
-    def __init__(self, name, data, data_parameters, trials=1):
+    def __init__(self, name, data, data_parameters, trials=1, batch_indices=False):
         super(Evaluation, self).__init__()
         self._name = name
         self._data = data
         self._data_parameters = data_parameters
         self._trials = trials
+        self._batch_indices = batch_indices
 
     def run(self, model):
         if self._trials == 1:
@@ -46,9 +47,9 @@ class Evaluation(object):
         result = self._initialize_result()
 
         for i in range(self._data.get_num_batches(batch_size)):
-            result = self._aggregate_batch(result, self._run_batch(model, self._data.get_batch(i, batch_size)))
+            result = self._aggregate_batch(result, self._run_batch(model, self._data.get_batch(i, batch_size, return_indices=self._batch_indices)))
 
-        final_batch = self._data.get_final_batch(batch_size)
+        final_batch = self._data.get_final_batch(batch_size, return_indices=self._batch_indices)
         if final_batch is not None:
             result = self._aggregate_batch(result, self._run_batch(model, final_batch))
 
