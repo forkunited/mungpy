@@ -264,6 +264,33 @@ class Partition:
     def part_contains(self, name, value):
         return name in self._parts and value in self._parts[name]
 
+    def merge_parts(self, part_names, new_part_name):
+        new_part_dict = dict()
+        for part_name in part_names:
+            new_part_dict.update(self._parts[part_name])
+            del self._parts[part_name]
+        self._parts[new_part_name] = new_part_dict
+
+    def split_part(self, part_name, new_part_names, new_sizes):
+        old_part_dict = self._parts[part_name]
+        del self._parts[part_name]
+
+        old_part_keys = [].extend(old_part_dict.keys())
+        old_part_values = [].extend(old_part_dict.values())
+        cur_start = 0
+        for i in range(len(new_part_names)):
+            new_part_name = new_part_names[i]
+            new_size = new_sizes[i]*self._size
+
+            if i == len(new_part_names) - 1:
+                new_size = len(old_part_keys) - cur_start
+            
+            self._parts[new_part_name] = dict()
+            for j in range(cur_start, cur_start+new_size):
+                self._parts[new_part_name][old_part_keys[j]] = old_part_values[j]
+
+            cur_start += new_size
+
     def union(self, other_part):
         if self._keep_data != other_part._keep_data:
             raise ValueError("Cannot merge a data-included partition with a data-removed partition.")
