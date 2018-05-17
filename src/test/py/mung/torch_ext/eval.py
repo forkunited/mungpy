@@ -11,8 +11,8 @@ data_dir = sys.argv[1]
 target_dir = sys.argv[2]
 
 # Necessary to allow unittest.main() to work
-del sys.argv[1]
 del sys.argv[2]
+del sys.argv[1]
 
 class TestEvaluation(unittest.TestCase):
 
@@ -47,7 +47,7 @@ class TestEvaluation(unittest.TestCase):
                 index = torch.zeros(value.size(0)).long()
                 mask = torch.ones(value.size(0)).long()
                 support = self._vs
-                
+                has_missing = False 
                 for b in range(support.size(0)): # Over batch
                     found = False
                     for s in range(support.size(1)): # Over samples in support
@@ -75,20 +75,19 @@ class TestEvaluation(unittest.TestCase):
                 targets = batch[data_parameters[DataParameter.TARGET]]
                 max_target = int(torch.max(targets))
                 err = 1.0 -self._acc
-                change_count = err*targets.size(1)
+                change_count = int(err*targets.size(0))
                 change_indices = np.random.choice(targets.size(0), change_count, replace=False)
                 change_indices = torch.from_numpy(change_indices)
-                vs = torch.arange(0, max_target).unsqueeze(0).repeat(targets.size(0),1)
-                ps = torch.ones(targets.size(0), max_target)
-
+                vs = torch.arange(0, max_target+1).unsqueeze(0).repeat(targets.size(0),1)
+                ps = torch.ones(targets.size(0), max_target+1)
                 for i in range(targets.size(0)):
-                    ps[i, targets[i]] *= 2.0
+                    ps[i, int(targets[i,0])] = ps[i, int(targets[i,0])]*2.0
 
                 for i in range(change_indices.size(0)):
                     index = change_indices[i]
-                    ps[index, targets[i]] /= 4.0
+                    ps[index, int(targets[index,0])] = ps[index, int(targets[index,0])]/4.0
 
-                return Categorical(vs=vs, ps=ps)
+                return Categorical(vs=vs, ps=Variable(ps))
 
 
         data = MultiviewDataSet.load(data_dir, dfmat_paths={ "target" : target_dir })
@@ -98,7 +97,7 @@ class TestEvaluation(unittest.TestCase):
         for i in range(4):
             model = TestModel(acc=0.25*i)
             result = acc.run(model)
-            self.assertEqual(result, 0.25*i)
+            self.assertAlmostEqual(result, 0.25*i, delta=0.0001)
 
 
 

@@ -1619,7 +1619,7 @@ class MultiviewDataSet:
             mat_views = self._dfmats.keys()
         if seq_views is None:
             seq_views = self._dfmatseqs.keys()
-            if self._ordering_seq is None:
+            if self._ordering_seq is None and len(seq_views) > 0:
                 ordering_view = seq_views[0]
             else:
                 ordering_view = self._ordering_seq
