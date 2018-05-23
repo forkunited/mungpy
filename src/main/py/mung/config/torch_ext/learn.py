@@ -14,6 +14,7 @@ from mung.torch_ext.learn import Trainer
 #   log_interval : [LOG INTERVAL]
 #   (Optional) curriculum : {
 #       steps : [NUMBER OF CURRICULUM STEPS TO SPLIT DATA INTO]
+#       final_iterations : [NUMBER OF ITERATIONS AT FINAL STEP OF CURRICULUM]
 #   }
 # }
 def train_from_config(config, data_parameter, loss_criterion, logger, evaluations, model, data_sets, best_part_fn=None, curriculum_key_fn=None):
@@ -45,7 +46,11 @@ def train_from_config(config, data_parameter, loss_criterion, logger, evaluation
         data_size = data.get_size()
         steps = int(config["curriculum"]["steps"])
         for i in range(steps):
+            if i == steps-1:
+                iterations = config["curriculum"]["final_iterations"]
+
             step_data = data.get_subset(0, (i+1)*data_size/steps)
+            step_data.shuffle()
             model, best_part, best_iteration = trainer.train(model, step_data, iterations, \
                 batch_size=batch_size, optimizer_type=optimizer_type, lr=learning_rate, weight_decay=weight_decay, \
                 grad_clip=gradient_clipping, log_interval=log_interval, best_part_fn=best_part_fn)
