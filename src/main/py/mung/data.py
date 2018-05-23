@@ -285,12 +285,15 @@ class Partition:
         old_part_dict = self._parts[part_name]
         del self._parts[part_name]
 
-        old_part_keys = [].extend(old_part_dict.keys())
-        old_part_values = [].extend(old_part_dict.values())
+        old_part_keys = []
+        old_part_keys.extend(old_part_dict.keys())
+        old_part_values = []
+        old_part_values.extend(old_part_dict.values())
+        
         cur_start = 0
         for i in range(len(new_part_names)):
             new_part_name = new_part_names[i]
-            new_size = new_sizes[i]*self._size
+            new_size = int(new_sizes[i]*self._size)
 
             if i == len(new_part_names) - 1:
                 new_size = len(old_part_keys) - cur_start

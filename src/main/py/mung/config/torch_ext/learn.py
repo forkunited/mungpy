@@ -20,7 +20,7 @@ def train_from_config(config, data_parameter, loss_criterion, logger, evaluation
     data = data_sets[config["data"]]
     if "data_size" in config:
         data.shuffle()
-        data.get_subset(0, int(config["data_size"]))
+        data = data.get_subset(0, int(config["data_size"]))
 
     trainer = Trainer(data_parameter, loss_criterion, logger, \
             evaluations[0], other_evaluations=evaluations[1:len(evaluations)], \
