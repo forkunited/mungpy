@@ -158,6 +158,16 @@ class DataSet:
         self._data = shuffled_data
         return perm
 
+    def sort(self, key_fn):
+        perm = range(len(self._data))
+        indexed_key_fn = lambda index : key_fn(self._data[index])
+        perm.sort(key=indexed_key_fn)
+        sorted_data = []
+        for i in range(len(perm)):
+            sorted_data.append(self._data[perm[i]])
+        self._data = sorted_data
+        return np.array(perm)
+
     def split(self, sizes):
         datas = []
         index = 0

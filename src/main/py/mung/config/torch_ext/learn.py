@@ -12,8 +12,11 @@ from mung.torch_ext.learn import Trainer
 #   weight_decay : [WEIGHT DECAY]
 #   gradient_clipping : [GRADIENT CLIPPING]
 #   log_interval : [LOG INTERVAL]
+#   (Optional) curriculum : {
+#       steps : [NUMBER OF CURRICULUM STEPS TO SPLIT DATA INTO]
+#   }
 # }
-def train_from_config(config, data_parameter, loss_criterion, logger, evaluations, model, data_sets, best_part_fn=None):
+def train_from_config(config, data_parameter, loss_criterion, logger, evaluations, model, data_sets, best_part_fn=None, curriculum_key_fn=None):
     data = data_sets[config["data"]]
     if "data_size" in config:
         data.shuffle()
@@ -30,8 +33,21 @@ def train_from_config(config, data_parameter, loss_criterion, logger, evaluation
     weight_decay = float(config["weight_decay"])
     gradient_clipping = float(config["gradient_clipping"])
     log_interval = int(config["log_interval"])
-    best_model, best_part, best_iteration = trainer.train(model, data, iterations, \
+
+    best_part = None
+    best_iteration = None
+    if "curriculum" not in config or curriculum_key_fn is None:
+        model, best_part, best_iteration = trainer.train(model, data, iterations, \
             batch_size=batch_size, optimizer_type=optimizer_type, lr=learning_rate, weight_decay=weight_decay, \
             grad_clip=gradient_clipping, log_interval=log_interval, best_part_fn=best_part_fn)
+    else:
+        data.sort(curriculum_key_fn)
+        data_size = data.get_size()
+        steps = int(config["curriculum"]["steps"])
+        for i in range(steps):
+            step_data = data.get_subset(0, (i+1)*data_size/steps)
+            model, best_part, best_iteration = trainer.train(model, step_data, iterations, \
+                batch_size=batch_size, optimizer_type=optimizer_type, lr=learning_rate, weight_decay=weight_decay, \
+                grad_clip=gradient_clipping, log_interval=log_interval, best_part_fn=best_part_fn)
 
-    return best_model, best_part, best_iteration
+    return model, best_part, best_iteration

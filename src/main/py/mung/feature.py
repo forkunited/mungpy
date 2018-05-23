@@ -1521,6 +1521,14 @@ class MultiviewDataSet:
         for dfmatseq in self._dfmatseqs.values():
             dfmatseq.reorder(perm, preordered_data=self._data)
 
+    def sort(self, key_fn):
+        perm = self._data.sort(key_fn)
+
+        for dfmat in self._dfmats.values():
+            dfmat.reorder(perm, preordered_data=self._data)
+
+        for dfmatseq in self._dfmatseqs.values():
+            dfmatseq.reorder(perm, preordered_data=self._data)
 
     def partition(self, partition, key_fn):
         data_parts = self._data.partition(partition, key_fn)
