@@ -17,7 +17,7 @@ from mung.torch_ext.learn import Trainer
 #       final_iterations : [NUMBER OF ITERATIONS AT FINAL STEP OF CURRICULUM]
 #   }
 # }
-def train_from_config(config, data_parameter, loss_criterion, logger, evaluations, model, data_sets, best_part_fn=None, curriculum_key_fn=None):
+def train_from_config(config, data_parameter, loss_criterion, logger, evaluations, model, data_sets, best_part_fn=None, curriculum_key_fn_constructor=None):
     data = data_sets[config["data"]]
     if "data_size" in config:
         data.shuffle()
@@ -37,11 +37,12 @@ def train_from_config(config, data_parameter, loss_criterion, logger, evaluation
 
     best_part = None
     best_iteration = None
-    if "curriculum" not in config or curriculum_key_fn is None:
+    if "curriculum" not in config or curriculum_key_fn_constructor is None:
         model, best_part, best_iteration = trainer.train(model, data, iterations, \
             batch_size=batch_size, optimizer_type=optimizer_type, lr=learning_rate, weight_decay=weight_decay, \
             grad_clip=gradient_clipping, log_interval=log_interval, best_part_fn=best_part_fn)
     else:
+        curriculum_key_fn = curriculum_key_fn_constructor(data)
         data.sort(curriculum_key_fn)
         data_size = data.get_size()
         steps = int(config["curriculum"]["steps"])
