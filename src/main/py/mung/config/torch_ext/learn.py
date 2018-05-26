@@ -57,3 +57,61 @@ def train_from_config(config, data_parameter, loss_criterion, logger, evaluation
                 grad_clip=gradient_clipping, log_interval=log_interval, best_part_fn=best_part_fn)
 
     return model, best_part, best_iteration
+
+
+
+def cotrain_from_config(config, data_parameter, loss_criteria, logger, evaluations, models, data_sets, best_part_fns=None, curriculum_key_fn_constructor=None):
+    data = data_sets[config["data"]]
+    if "data_size" in config:
+        data.shuffle()
+        data = data.get_subset(0, int(config["data_size"]))
+
+    trainers = []
+    for i in range(len(models)):
+        trainers.append(Trainer(data_parameter, loss_criteria[i], logger, \
+            evaluations[i][0], other_evaluations=evaluations[i][1:len(evaluations)], \
+            max_evaluation=bool(int(config["max_evaluation"][i]))))
+        
+    iterations = int(config["iterations"])
+    batch_size = int(config["batch_size"])
+    optimizer_type = config["optimizer_type"]
+    learning_rate = float(config["learning_rate"])
+    weight_decay = float(config["weight_decay"])
+    gradient_clipping = float(config["gradient_clipping"])
+    log_interval = int(config["log_interval"])
+    swap_interval = int(config["swap_interval"])
+
+    best_part = None
+    best_iteration = None
+    if "curriculum" not in config or curriculum_key_fn_constructor is None:
+        current_iter = 0
+        while current_iter < iterations:
+            for i in range(len(models)):
+                best_part_fn = None
+                if best_part_fns is not None:
+                    best_part_fn = best_part_fns[i]
+                model, best_part, best_iteration = trainers[i].train(models[i], data, swap_interval, \
+                    batch_size=batch_size, optimizer_type=optimizer_type, lr=learning_rate, weight_decay=weight_decay, \
+                    grad_clip=gradient_clipping, log_interval=log_interval, best_part_fn=best_part_fn)
+            current_iter += swap_interval
+    else:
+        curriculum_key_fn = curriculum_key_fn_constructor(data)
+        data.sort(curriculum_key_fn)
+        data_size = data.get_size()
+        steps = int(config["curriculum"]["steps"])
+        for i in range(steps):
+            if i == steps-1:
+                iterations = config["curriculum"]["final_iterations"]
+            step_data = data.get_subset(0, (i+1)*data_size/steps)
+            step_data.shuffle()
+            while current_iter < iterations:
+                for i in range(len(models)):
+                    best_part_fn = None
+                    if best_part_fns is not None:
+                        best_part_fn = best_part_fns[i]
+                    model, best_part, best_iteration = trainers[i].train(models[i], step_data, swap_interval, \
+                        batch_size=batch_size, optimizer_type=optimizer_type, lr=learning_rate, weight_decay=weight_decay, \
+                        grad_clip=gradient_clipping, log_interval=log_interval, best_part_fn=best_part_fn)
+                    current_iter += swap_interval
+
+    return model, best_part, best_iteration
