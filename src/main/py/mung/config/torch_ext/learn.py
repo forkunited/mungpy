@@ -60,7 +60,7 @@ def train_from_config(config, data_parameter, loss_criterion, logger, evaluation
 
 
 
-def cotrain_from_config(config, data_parameter, loss_criteria, logger, evaluations, models, data_sets, best_part_fns=None, curriculum_key_fn_constructor=None):
+def cotrain_from_config(config, data_parameters, loss_criteria, loggers, evaluations, models, data_sets, best_part_fns=None, curriculum_key_fn_constructor=None):
     data = data_sets[config["data"]]
     if "data_size" in config:
         data.shuffle()
@@ -68,7 +68,7 @@ def cotrain_from_config(config, data_parameter, loss_criteria, logger, evaluatio
 
     trainers = []
     for i in range(len(models)):
-        trainers.append(Trainer(data_parameter, loss_criteria[i], logger, \
+        trainers.append(Trainer(data_parameters[i], loss_criteria[i], loggers[i], \
             evaluations[i][0], other_evaluations=evaluations[i][1:len(evaluations)], \
             max_evaluation=bool(int(config["max_evaluation"][i]))))
         
@@ -104,6 +104,7 @@ def cotrain_from_config(config, data_parameter, loss_criteria, logger, evaluatio
                 iterations = config["curriculum"]["final_iterations"]
             step_data = data.get_subset(0, (i+1)*data_size/steps)
             step_data.shuffle()
+            current_iter = 0
             while current_iter < iterations:
                 for i in range(len(models)):
                     best_part_fn = None
@@ -112,6 +113,6 @@ def cotrain_from_config(config, data_parameter, loss_criteria, logger, evaluatio
                     model, best_part, best_iteration = trainers[i].train(models[i], step_data, swap_interval, \
                         batch_size=batch_size, optimizer_type=optimizer_type, lr=learning_rate, weight_decay=weight_decay, \
                         grad_clip=gradient_clipping, log_interval=log_interval, best_part_fn=best_part_fn)
-                    current_iter += swap_interval
+                current_iter += swap_interval
 
     return model, best_part, best_iteration
