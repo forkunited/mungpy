@@ -17,7 +17,7 @@ from mung.data import Partition
 #       key : [PARTITION ID KEY] (if PARTITION)
 #       parts : [DICTIONARY OF PART NAMES] (if PARTITION)
 #       filter : [FILTER DICTIONARY] (if FILTER)
-#       (optional) filter_type : Type of filter (EQUAL|NOT_EQUAL) (Default: EQUAL)
+#       (optional) filter_type : Type of filter (EQUAL|NOT_EQUAL|GREATER|LESS) (Default: EQUAL)
 #       (optional) superset : Name of the set to take a subset of
 #     ]
 #   }
@@ -61,6 +61,20 @@ def load_mvdata(config):
                         d_match = True
                         for d_key, d_value in subset_filter.iteritems():
                             d_match = (d_match and d.get(d_key) != d_value)
+                        return d_match
+                    S[item["name"]] = D_cur.filter(f)
+                elif "filter_type" in item and item["filter_type"] == "GREATER":
+                    def f(d):
+                        d_match = True
+                        for d_key, d_value in subset_filter.iteritems():
+                            d_match = (d_match and d.get(d_key) > d_value)
+                        return d_match
+                    S[item["name"]] = D_cur.filter(f)
+                elif "filter_type" in item and item["filter_type"] == "LESS":
+                    def f(d):
+                        d_match = True
+                        for d_key, d_value in subset_filter.iteritems():
+                            d_match = (d_match and d.get(d_key) < d_value)
                         return d_match
                     S[item["name"]] = D_cur.filter(f)
     return D, S
