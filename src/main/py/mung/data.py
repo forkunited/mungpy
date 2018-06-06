@@ -343,7 +343,7 @@ class Partition:
         return P
 
     @classmethod
-    def make(cls, D, sizes, part_names, key_fn):
+    def make(cls, D, sizes, part_names, key_fn, maintain_partition=None):
         P = Partition()
         D_parts = D.split(sizes)
 
@@ -351,8 +351,19 @@ class Partition:
         P._size =  D.get_size()
         P._parts = dict()
 
+        maintain_lookup = None
+        if maintain_partition is not None:
+            maintain_lookup = dict()
+            for part_name in maintain_partition._parts.keys():
+                for key in maintain_partition.parts[part_name].keys():
+                    maintain_lookup[key] = part_name
+
         for i in range(len(part_names)):
             P._parts[part_names[i]] = dict()
             for datum in D_parts[i]:
-                P._parts[part_names[i]][key_fn(datum)] = 1
+                key = key_fn(datum)
+                if maintain_lookup is not None and key in maintain_lookup:
+                    P._parts[maintain_lookup[key]][key] = 1
+                else:
+                    P._parts[part_names[i]][key] = 1
         return P
