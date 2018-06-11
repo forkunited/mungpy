@@ -355,11 +355,13 @@ class Partition:
         if maintain_partition is not None:
             maintain_lookup = dict()
             for part_name in maintain_partition._parts.keys():
-                for key in maintain_partition.parts[part_name].keys():
+                for key in maintain_partition._parts[part_name].keys():
                     maintain_lookup[key] = part_name
+                P._parts[part_name] = dict()
 
         for i in range(len(part_names)):
-            P._parts[part_names[i]] = dict()
+            if part_names[i] not in P._parts:
+                P._parts[part_names[i]] = dict()
             for datum in D_parts[i]:
                 key = key_fn(datum)
                 if maintain_lookup is not None and key in maintain_lookup:
