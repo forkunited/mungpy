@@ -8,6 +8,7 @@ import torch
 from torch.autograd import Variable
 from mung import data
 from mung.data import DataSet, Partition
+from mung.util.rep import StoredVectorDictionary
 from bidict import bidict
 from collections import Counter
 from os.path import join, isfile
@@ -772,6 +773,93 @@ class FeaturePathSequence(FeatureSequence):
         if "vocab" in obj:
             vocab = bidict(obj["vocab"])
         return FeaturePathSequence(name, paths, seq_length, min_occur=min_occur, value_type=value_type, value_fn=value_fn, token_fn=token_fn, vocab=vocab)
+
+class FeaturePathVectorDictionaryType(FeaturePathType):
+    def __init__(self, name, paths, vector_dict, vector_fn=None, vocab=None, token_fn=lambda x : x):
+        FeaturePathType.__init__(self, name, paths, value_type=ValueType.SCALAR, token_fn=token_fn, vocab=vocab)
+        self._vector_dict = vector_dict
+        self._vector_fn = vector_fn
+        
+    def _value_fn(self, path_to_values):
+        mapping = []
+        for path in path_to_values:
+            values = path_to_values[path]
+            if len(values) == 0:
+                continue
+            if isinstance(values[0], list):
+                values = [el for value in values for el in value]
+            for i in range(len(values)):
+                transformed_value = self._token_fn(values[i])
+                vec = self._vector_dict[transformed_value]
+                for j in range(len(vec)):
+                    mapping.append((path + "_" + str(i) + "_" + str(j), self._vector_fn(vec[j]))
+        return mapping
+    
+    def save(self, file_path):
+        # Same as FeaturePathType... should probably be changed if FeaturePathType changes
+        # Also, should eventually FIXME to remove the redundancy
+        obj = dict()
+        obj["type"] = "FeaturePathVectorDictionaryType"
+        obj["name"] = self._name
+        obj["paths"] = self._paths
+        obj["min_occur"] = self._min_occur
+        obj["no_init"] = self._no_init
+        obj["value_type"] = self._value_type
+        if self._value_fn is not None:
+            obj["value_fn"] = pickle.dumps(self._value_fn)
+        if self._token_fn is not None:
+            obj["token_fn"] = pickle.dumps(self._token_fn)
+        if self._seq_index is not None:
+            obj["seq_index"] = self._seq_index
+        if self._vocab is not None:
+            obj["vocab"] = dict(self._vocab)
+
+        # Not FeaturePathType... specific to VectorDictionaryType
+        obj["vector_dict"] = self._vector_dict.to_dict()
+        if self._vector_fn is not None:
+            obj["vector_fn"] = pickle.dumps(self._vector_fn)
+
+        with open(file_path, 'w') as fp:
+            pickle.dump(obj, fp)
+
+    @staticmethod
+    def load(file_path):
+        with open(file_path, 'r') as fp:
+            obj = pickle.load(fp)
+            return FeaturePathVectorDictionaryType.from_dict(obj)
+
+    @staticmethod
+    def from_dict(obj):
+        # Same as FeaturePathType... should probably be changed if FeaturePathType changes
+        # Also, should eventually FIXME to remove the redundancy
+        name = obj["name"]
+        paths = obj["paths"]
+        
+        # Unnecessary for now 
+        #min_occur = obj["min_occur"]
+        #no_init = obj["no_init"]
+        #value_type = obj["value_type"]
+        #value_fn = None
+        #if "value_fn" in obj:
+        #    value_fn = pickle.loads(obj["value_fn"])
+        token_fn = None
+        if "token_fn" in obj:
+            token_fn = pickle.loads(obj["token_fn"])
+        #seq_index = None
+        #if "seq_index" in obj:
+        #    seq_index = obj["seq_index"]
+        vocab = None
+        if "vocab" in obj:
+            vocab = bidict(obj["vocab"])
+
+        # Not FeaturePathType... specific to VectorDictionaryType
+        vector_dict = StoredVectorDictionary(vecs=obj["vector_dict"])
+
+        vector_fn = None
+        if "vector_fn" in obj:
+            vector_fn = pickle.loads(obj["vector_fn"])
+
+        return FeaturePathVectorDictionaryType(name, paths, vector_dict, token_fn=token_fn, vector_fn=vector_fn, vocab=vocab)
 
 
 class FeatureSet:
