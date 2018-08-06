@@ -775,8 +775,8 @@ class FeaturePathSequence(FeatureSequence):
         return FeaturePathSequence(name, paths, seq_length, min_occur=min_occur, value_type=value_type, value_fn=value_fn, token_fn=token_fn, vocab=vocab)
 
 class FeaturePathVectorDictionaryType(FeaturePathType):
-    def __init__(self, name, paths, vector_dict, vector_fn=None, vocab=None, token_fn=lambda x : x):
-        FeaturePathType.__init__(self, name, paths, value_type=ValueType.SCALAR, token_fn=token_fn, vocab=vocab)
+    def __init__(self, name, paths, vector_dict, vector_fn=lambda v : v, vocab=None, token_fn=lambda x : x):
+        FeaturePathType.__init__(self, name, paths, value_type=ValueType.SCALAR, value_fn=self._value_fn, token_fn=token_fn, vocab=vocab)
         self._vector_dict = vector_dict
         self._vector_fn = vector_fn
         
@@ -790,9 +790,15 @@ class FeaturePathVectorDictionaryType(FeaturePathType):
                 values = [el for value in values for el in value]
             for i in range(len(values)):
                 transformed_value = self._token_fn(values[i])
-                vec = self._vector_dict[transformed_value]
+                if transformed_value in self._vector_dict:
+                    vec = self._vector_dict[transformed_value]
+                else:
+                    vec = self._vector_dict.get_default_vector()
+
+                vec = self._vector_fn(vec)
+
                 for j in range(len(vec)):
-                    mapping.append((path + "_" + str(i) + "_" + str(j), self._vector_fn(vec[j]))
+                    mapping.append((path + "_" + str(i) + "_" + str(j), vec[j]))
         return mapping
     
     def save(self, file_path):
@@ -805,8 +811,6 @@ class FeaturePathVectorDictionaryType(FeaturePathType):
         obj["min_occur"] = self._min_occur
         obj["no_init"] = self._no_init
         obj["value_type"] = self._value_type
-        if self._value_fn is not None:
-            obj["value_fn"] = pickle.dumps(self._value_fn)
         if self._token_fn is not None:
             obj["token_fn"] = pickle.dumps(self._token_fn)
         if self._seq_index is not None:
@@ -1757,6 +1761,7 @@ class MultiviewDataSet:
         return mv
 
 register_feature_type(FeaturePathType)
+register_feature_type(FeaturePathVectorDictionaryType)
 register_feature_type(FeatureMatrixType)
 register_feature_seq_type(FeatureMatrixSequence)
 register_feature_seq_type(FeaturePathSequence)

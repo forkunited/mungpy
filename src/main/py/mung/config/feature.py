@@ -42,6 +42,16 @@ def load_mvdata(config):
                 id_key = "id"
                 if "key" in item:
                     id_key = item["key"]
+                
+                merged_parts = dict()
+                for k,v in item["parts"].iteritems():
+                    if v not in merged_parts:
+                        merged_parts[v] = []
+                    merged_parts[v].append(k)
+
+                for new_part_key, merged_keys in merged_parts.iteritems():
+                    P.merge_parts(merged_keys, new_part_key)
+                
                 D_parts = D.partition(P, lambda d : d.get(id_key))
                 for part_key, part in D_parts.iteritems():
                     if part_key in item["parts"]:

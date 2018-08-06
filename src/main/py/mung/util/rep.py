@@ -14,9 +14,13 @@ class StoredVectorDictionary:
             self._vecs = dict()
             if file_path is not None:
                 self._load(file_path, storage_format, delimiter, header_lines, transform_fn, normalized)
+        self._vec_size = self._vecs.values()[0].shape[0]
 
-    def to_dict():
+    def to_dict(self):
         return self._vecs
+
+    def get_default_vector(self):
+        return np.zeros(shape=(self._vec_size))
 
     def __getitem__(self, key):
         return self._vecs[key]
@@ -59,4 +63,4 @@ class StoredVectorDictionary:
             sigma = np.std(mat, axis=0)
 
             for key in self._vecs.keys():
-                self._vecs[key] = (self._vecs[key] - mu)/std
+                self._vecs[key] = (self._vecs[key] - mu)/sigma
