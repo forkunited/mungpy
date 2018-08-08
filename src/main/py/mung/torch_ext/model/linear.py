@@ -1,6 +1,8 @@
+import mung.torch_ext.eval
 import torch
 import torch.nn as nn
 from torch.autograd import Variable
+
 
 class DataParameter:
     INPUT = "input"
@@ -15,6 +17,12 @@ class DataParameter:
             return self._input
         elif key == DataParameter.OUTPUT:
             return self._output
+        elif key == mung.torch_ext.eval.DataParameter.TARGET:
+            return self._output
+    
+    @staticmethod
+    def make(input="input", output="output"):
+        return DataParameter(input, output)
 
 class LRLoss(nn.Module):
     def __init__(self, size_average=True):
@@ -39,7 +47,8 @@ class LinearModel(nn.Module):
         if init_params is not None:
             self._linear.weight = nn.Parameter(init_params.unsqueeze(0))
         else:
-            self._linear.weight = nn.Parameter(torch.zeros(1,self._input_size))
+            self._linear.weight = nn.Parameter(torch.zeros(self._output_size,self._input_size))
+
 
     def get_name(self):
         return self._name
@@ -78,7 +87,8 @@ class LinearModel(nn.Module):
             output = output.cuda()
 
         model_out = self.forward_batch(batch, data_parameters)
-        return loss_criterion(model_out, Variable(output))
+        target_out = Variable(output).long().squeeze()
+        return loss_criterion(model_out, target_out)
 
 class LinearRegression(LinearModel):
     def __init__(self, name, input_size, init_params=None, bias=False, std=1.0):
@@ -121,13 +131,14 @@ class LogisticRegression(LinearModel):
 class MultinomialLogisticRegression(LinearModel):
     def __init__(self, name, input_size, label_count, init_params=None, bias=False):
         super(MultinomialLogisticRegression, self).__init__(name, input_size, output_size=label_count, init_params=init_params, bias=bias)
+
         self._celoss = nn.CrossEntropyLoss(reduction='sum')
-        self._softmax = nn.Softmax()
+        self._softmax = nn.Softmax(dim=1)
 
     def predict(self, batch, data_parameters, rand=False):
         p = self._softmax(self.forward_batch(batch, data_parameters))
         if not rand:
-            return torch.max(p)[1]
+            return torch.argmax(p, dim=1)
         else:
             return torch.multinomial(p)
 

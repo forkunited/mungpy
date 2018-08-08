@@ -1,7 +1,10 @@
 import abc
 import torch
 import numpy as np
+
+from mung.eval import Evaluation
 from torch.autograd import Variable
+
 
 EVALUATION_BATCH_SIZE = 64 #16 #10 #100
 
@@ -14,15 +17,11 @@ class DataParameter:
         data_parameters[DataParameter.TARGET] = target
         return data_parameters
 
-class Evaluation(object):
+class ModuleEvaluation(Evaluation):
     __metaclass__ = abc.ABCMeta
 
     def __init__(self, name, data, data_parameters, trials=1, batch_indices=False):
-        super(Evaluation, self).__init__()
-        self._name = name
-        self._data = data
-        self._data_parameters = data_parameters
-        self._trials = trials
+        super(ModuleEvaluation, self).__init__(name, data, data_parameters, trials=trials)
         self._batch_indices = batch_indices
 
     def run(self, model):
@@ -33,9 +32,6 @@ class Evaluation(object):
             for i in range(self._trials):
                 results[i] = self._run_once(model)
             return np.mean(results), np.std(results)
-
-    def get_trials(self):
-        return self._trials
 
     def _run_once(self, model):
         model.eval()
@@ -73,24 +69,7 @@ class Evaluation(object):
     def _finalize_result(self, result):
         """ Returns the final value given the aggregate result """
 
-    def get_name(self):
-        return self._name
-
-    @staticmethod
-    def run_all(evaluations, model):
-        results = dict()
-        for evaluation in evaluations:
-            if evaluation.get_trials() == 1:
-                results[evaluation.get_name()] = evaluation.run(model)
-            else:
-                mean_name = evaluation.get_name()
-                std_name = evaluation.get_name() + " std (n=" + str(evaluation.get_trials()) + ")"
-                mean, std = evaluation.run(model)
-                results[mean_name] = mean
-                results[std_name] = std
-        return results
-
-class Loss(Evaluation):
+class Loss(ModuleEvaluation):
     def __init__(self, name, data, data_parameters, loss_criterion, norm_dim=False, trials=1):
         super(Loss, self).__init__(name, data, data_parameters, trials=trials)
         self._loss_criterion = loss_criterion
@@ -121,7 +100,7 @@ class Loss(Evaluation):
         else:
             return result / self._data.get_size()
 
-class DistributionAccuracy(Evaluation):
+class DistributionAccuracy(ModuleEvaluation):
     def __init__(self, name, data, data_parameters, model_fn=None, target_indexed = False, check_unique = False, trials=1):
         super(DistributionAccuracy, self).__init__(name, data, data_parameters, trials=trials)
         self._model_fn = model_fn
@@ -166,7 +145,7 @@ class DistributionAccuracy(Evaluation):
         return result / self._data.get_size()
 
 
-class ModelStatistic(Evaluation):
+class ModelStatistic(ModuleEvaluation):
     def __init__(self, name, data, data_parameters, stat_fn, trials=1):
         super(ModelStatistic, self).__init__(name, data, data_parameters, trials=trials)
         self._stat_fn = stat_fn
@@ -188,3 +167,33 @@ class ModelStatistic(Evaluation):
 
     def _finalize_result(self, result):
         pass
+
+class ModulePrediction(ModuleEvaluation):
+    def __init__(self, name, data, data_parameters, rand=False, metrics=[]):
+        super(ModulePrediction, self).__init__(name, data, data_parameters)
+        self._rand = rand
+        self._metrics = metrics
+
+    def get_metrics(self):
+        return self._metrics
+
+    def _run_batch(self, model, batch):
+        return model.predict(batch, self._data_parameters, rand=self._rand).numpy()
+
+    def _aggregate_batch(self, agg, batch_result):
+        return np.concatenate((agg, batch_result), axis=0)
+
+    def _initialize_result(self):
+        return np.array([])
+
+    def _finalize_result(self, result):
+        batch_full = self._data.get_batch(0,self._data.get_size())
+        y_true = batch_full[self._data_parameters[DataParameter.TARGET]].squeeze().numpy()
+        if len(self._metrics) == 0:
+            return y_true, result
+        else:
+            if len(self._metrics) > 1:
+                return [metric.compute(y_true, result) for metric in self._metrics]
+            else:
+                return self._metrics[0].compute(y_true, result)
+            

@@ -244,6 +244,13 @@ class Partition:
         self._size = 0
         self._parts = dict()
 
+    def copy(self):
+        P = Partition()
+        P._keep_data = self._keep_data
+        P._size = self._size
+        P._parts = dict(self._parts)
+        return P
+
     def get_size(self):
         return self._size
 
@@ -274,12 +281,19 @@ class Partition:
     def part_contains(self, name, value):
         return name in self._parts and value in self._parts[name]
 
+    def remove_parts(self, part_names):
+        for part_name in part_names:
+            self._size -= len(self._parts[part_name])
+            del self._parts[part_name]
+        return self
+
     def merge_parts(self, part_names, new_part_name):
         new_part_dict = dict()
         for part_name in part_names:
             new_part_dict.update(self._parts[part_name])
             del self._parts[part_name]
         self._parts[new_part_name] = new_part_dict
+        return self
 
     def split_part(self, part_name, new_part_names, new_sizes):
         old_part_dict = self._parts[part_name]
@@ -303,6 +317,7 @@ class Partition:
                 self._parts[new_part_name][old_part_keys[j]] = old_part_values[j]
 
             cur_start += new_size
+        return self
 
     def union(self, other_part):
         if self._keep_data != other_part._keep_data:

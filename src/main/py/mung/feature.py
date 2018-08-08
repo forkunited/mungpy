@@ -791,8 +791,10 @@ class FeaturePathVectorDictionaryType(FeaturePathType):
             for i in range(len(values)):
                 transformed_value = self._token_fn(values[i])
                 if transformed_value in self._vector_dict:
+                    print self.get_name() + " not missing " + transformed_value
                     vec = self._vector_dict[transformed_value]
                 else:
+                    print self.get_name() + " MISSING " + transformed_value
                     vec = self._vector_dict.get_default_vector()
 
                 vec = self._vector_fn(vec)
