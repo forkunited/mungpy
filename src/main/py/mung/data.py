@@ -344,6 +344,13 @@ class Partition:
             obj["parts"] = self._parts
             json.dump(obj, fp)
 
+    def make_reverse_lookup(self):
+        reverse_lookup = dict()
+        for part_key, part_dict in self._parts.iteritems():
+            for key in part_dict.keys():
+                reverse_lookup[key] = part_key
+        return reverse_lookup
+
     @classmethod
     def load(cls, file_path):
         P = Partition()

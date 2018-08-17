@@ -775,11 +775,12 @@ class FeaturePathSequence(FeatureSequence):
         return FeaturePathSequence(name, paths, seq_length, min_occur=min_occur, value_type=value_type, value_fn=value_fn, token_fn=token_fn, vocab=vocab)
 
 class FeaturePathVectorDictionaryType(FeaturePathType):
-    def __init__(self, name, paths, vector_dict, vector_fn=lambda v : v, vocab=None, token_fn=lambda x : x):
+    def __init__(self, name, paths, vector_dict, vector_fn=lambda v : v, vocab=None, token_fn=lambda x : x, internalize_dict=True):
         FeaturePathType.__init__(self, name, paths, value_type=ValueType.SCALAR, value_fn=self._value_fn, token_fn=token_fn, vocab=vocab)
         self._vector_dict = vector_dict
         self._vector_fn = vector_fn
-        
+        self._internalize_dict = internalize_dict
+
     def _value_fn(self, path_to_values):
         mapping = []
         for path in path_to_values:
@@ -791,10 +792,8 @@ class FeaturePathVectorDictionaryType(FeaturePathType):
             for i in range(len(values)):
                 transformed_value = self._token_fn(values[i])
                 if transformed_value in self._vector_dict:
-                    print self.get_name() + " not missing " + transformed_value
                     vec = self._vector_dict[transformed_value]
                 else:
-                    print self.get_name() + " MISSING " + transformed_value
                     vec = self._vector_dict.get_default_vector()
 
                 vec = self._vector_fn(vec)
@@ -821,7 +820,9 @@ class FeaturePathVectorDictionaryType(FeaturePathType):
             obj["vocab"] = dict(self._vocab)
 
         # Not FeaturePathType... specific to VectorDictionaryType
-        obj["vector_dict"] = self._vector_dict.to_dict()
+        obj["internalize_dict"] = self._internalize_dict
+        if self._internalize_dict:
+            obj["vector_dict"] = self._vector_dict.to_dict()
         if self._vector_fn is not None:
             obj["vector_fn"] = pickle.dumps(self._vector_fn)
 
@@ -859,13 +860,17 @@ class FeaturePathVectorDictionaryType(FeaturePathType):
             vocab = bidict(obj["vocab"])
 
         # Not FeaturePathType... specific to VectorDictionaryType
-        vector_dict = StoredVectorDictionary(vecs=obj["vector_dict"])
+        internalize_dict = obj["internalize_dict"]
+        if internalize_dict:
+            vector_dict = StoredVectorDictionary(vecs=obj["vector_dict"])
+        else:
+            vector_dict = StoredVectorDictionary(vecs=dict())
 
         vector_fn = None
         if "vector_fn" in obj:
             vector_fn = pickle.loads(obj["vector_fn"])
 
-        return FeaturePathVectorDictionaryType(name, paths, vector_dict, token_fn=token_fn, vector_fn=vector_fn, vocab=vocab)
+        return FeaturePathVectorDictionaryType(name, paths, vector_dict, token_fn=token_fn, vector_fn=vector_fn, vocab=vocab, internalize_dict=internalize_dict)
 
 
 class FeatureSet:
@@ -1761,6 +1766,200 @@ class MultiviewDataSet:
             mv._dfmatseqs[name] = DataFeatureMatrixSequence.load(path, data=mv._data)
 
         return mv
+
+class PairedFeatureType:
+    DIFFERENCE = "DIFFERENCE"
+    TUPLE = "TUPLE"
+
+class PairedMultiviewDataSet:
+    def __init__(self, mvdata, data_indices, paired_feature_types):
+        self._mvdata = mvdata
+        self._data_indices = data_indices
+        self._paired_feature_types = paired_feature_types
+
+    def get_datum_pair(self, index):
+        data = self._mvdata.get_data()
+        return (data[self._data_indices[index,0]], data[self._data_indices[index,1]])
+
+    def get_size(self):
+        return self._data_indices.shape[0]
+
+    def shuffle(self):
+        perm = np.random.permutation(self.get_size())
+        self._data_indices = self._data_indices[perm]
+
+    def get_random_batch(self, size, sort_lengths=True, mat_views=None, seq_views=None, return_indices=False):
+        if size > self.get_size():
+            raise ValueError("Batch size cannot be greater than data set size")
+        batch_indices = np.random.choice(self.get_size(), size, replace=False)
+        return self.get_batch_by_indices(batch_indices, sort_lengths=sort_lengths,
+                                         mat_views=mat_views, seq_views=seq_views, return_indices=return_indices)
+
+    def get_batch(self, batch_i, size, sort_lengths=True, mat_views=None, seq_views=None, return_indices=False):
+        if size > self.get_size():
+            raise ValueError("Batch size cannot be greater than data set size")
+        return self.get_batch_by_indices(np.array(range(batch_i*size, (batch_i+1)*size)),
+                                         sort_lengths=sort_lengths, mat_views=mat_views,
+                                         seq_views=seq_views, return_indices=return_indices)
+
+    def get_final_batch(self, size, sort_lengths=True, mat_views=None, seq_views=None, return_indices=False):
+        if size > self.get_size():
+            raise ValueError("Batch size cannot be greater than data set size")
+        final_size = self.get_size() % size
+        if final_size == 0:
+            return None
+        return self.get_batch_by_indices(np.array(range(self.get_size() - final_size, self.get_size())),
+                                         sort_lengths=sort_lengths, mat_views=mat_views,
+                                         seq_views=seq_views, return_indices=return_indices)
+    def get_num_batches(self, size):
+        if size > self.get_size():
+            raise ValueError("Batch size cannot be greater than data set size")
+        return self.get_size() // size
+
+    def get_batch_by_indices(self, batch_indices, mat_views=None, return_indices=False):
+        mv_indices1 = self._data_indices[batch_indices,0]
+        mv_indices2 = self._data_indices[batch_indices,1]
+
+        batch_dict1 = self._mvdata.get_batch_by_indices(mv_indices1, mat_views=mat_views, seq_views=[])
+        batch_dict2 = self._mvdata.get_batch_by_indices(mv_indices2, mat_views=mat_views, seq_views=[])
+
+        if mat_views is None:
+            mat_views = batch_dict1.keys()
+
+        batch_dict = dict()
+        for mat_view in mat_views:
+            if self._paired_feature_types[mat_view] == PairedFeatureType.DIFFERENCE:
+                batch_dict[mat_view] = batch_dict1[mat_view] - batch_dict2[mat_view]
+            elif self._paired_feature_types[mat_view] == PairedFeatureType.TUPLE:
+                batch_dict[mat_view] = (batch_dict1[mat_view], batch_dict2[mat_view])
+            else:
+                raise ValueError(mat_view + " has invalid paired feature type.")
+
+        if return_indices:
+            return batch_dict, batch_indices
+        else:
+            return batch_dict
+
+    def partition(self, partition, key_fn):
+        data_indices_parts = dict()
+        reverse_parts = partition.make_reverse_lookup()
+        mv_parts = self._mvdata.partition(partition, key_fn)
+
+        part_keys_to_indices = dict()
+        for part_name, mv_part in mv_parts.iteritems():
+            part_keys_to_indices[part_name] = dict()
+            for i in range(mv_part.get_size()):
+                key = key_fn(mv_part.get_data().get(i))
+                part_keys_to_indices[part_name][key] = i
+
+
+        for i in range(self._data_indices.shape[0]):
+            k1 = key_fn(self._mvdata.get_data().get(self._data_indices[i,0]))
+            k2 = key_fn(self._mvdata.get_data().get(self._data_indices[i,1]))
+            if reverse_part[k1] != reverse_parts[k2]:
+                raise ValueError("Data pairs extend across partition parts.")
+            part_key = reverse_part[k1]
+            if part_key not in data_indices_parts:
+                data_indices_parts[part_key] = []
+
+            part_index_1 = part_keys_to_indices[part_key][k1]
+            part_index_2 = part_keys_to_indices[part_key][k2]
+            data_indices_parts[part_key].append((part_index_1, part_index_2))
+
+        for part_key in partition.get_part_names():
+            indices_array = None
+            if part_key not in data_indices_parts:
+                indices_array = np.array([])
+            else:
+                indices_array = np.zeros(shape=(len(data_indices_parts[part_key]),2))
+                for i in range(len(data_indices_parts[part_key])):
+                    indices_array[i,0] = data_indices_parts[i][0]
+                    indices_array[i,1] = data_indices_parts[i][1]
+            data_indices_parts[part_key] = indices_array
+                
+        
+
+        pmv_parts = dict()
+        for k, v in mv_parts.iteritems():
+            pmv_parts = PairedMultiviewDataSet(v, data_indices_parts[k], self._paired_feature_fns)
+
+        return pmv_parts
+
+    def __getitem__(self, key):
+        raise NotImplementedError()
+
+    def get_data(self):
+        raise NotImplementedError()
+
+    def sort(self, key_fn):
+        raise NotImplementedError()
+
+    def filter(self, filter_fn):
+        raise NotImplementedError()
+
+    def get_random_subset(self, size):
+        raise NotImplementedError()
+
+    def get_subset(self, subset_i, size):
+        raise NotImplementedError()
+
+    def save(self, dir_path):
+        info_path = join(dir_path, "info")
+        indices_path = join(dir_path, "data_indices.npy")
+
+        if not os.path.exists(dir_path):
+            os.makedirs(dir_path)
+
+        info = dict()
+        info["paired_feature_types"] = self._paired_feature_types
+        with open(info_path, 'w') as fp:
+            json.dump(info, fp)
+
+        np.save(indices_path, self._data_indices)
+
+    @classmethod
+    def load(cls, dir_path, mvdata):
+        info_path = join(dir_path, "info")
+        indices_path = join(dir_path, "data_indices.npy")
+
+        data_indices = np.load(indices_path)
+        
+        paired_feature_types = None
+        with open(info_path, 'r') as fp:
+            obj = json.load(fp)
+            paired_feature_types = obj["paired_feature_types"]
+
+        return PairedMultiviewDataSet(mvdata, data_indices, paired_feature_types)
+
+    @classmethod
+    def make(cls, mvdata, size, paired_feature_types, init_with_replacement=False, partition=None, partition_key_fn=None, filter_fn=lambda d1, d2 : True):
+        data_indices = np.zeros(shape=(size,2), dtype=np.int32)
+        
+        reverse_partition = None
+        if partition is not None:
+            reverse_partition = partition.make_reverse_lookup()
+
+        # TODO: Do this more efficiently without rejection sampling
+        index_tuple_set = set()
+        cur_size = 0
+        while cur_size < data_indices.shape[0]:
+            indices = np.random.choice(mvdata.get_size(), 2, replace=True)
+
+            d0 = mvdata.get_data()[indices[0]]
+            d1 = mvdata.get_data()[indices[1]]
+
+            index_tuple = (indices[0], indices[1])
+            if (not init_with_replacement and index_tuple in index_tuple_set) \
+                or not filter_fn(d0, d1) \
+                or (partition is not None and \
+                    reverse_partition[partition_key_fn(d0)] != reverse_partition[partition_key_fn(d1)]):
+                continue
+            index_tuple_set.add(index_tuple)
+
+            data_indices[cur_size] = indices
+            cur_size += 1
+
+        return PairedMultiviewDataSet(mvdata, data_indices, paired_feature_types)
 
 register_feature_type(FeaturePathType)
 register_feature_type(FeaturePathVectorDictionaryType)

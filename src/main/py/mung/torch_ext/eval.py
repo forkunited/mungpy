@@ -2,6 +2,7 @@ import abc
 import torch
 import numpy as np
 
+from mung.data import DataSet
 from mung.eval import Evaluation
 from torch.autograd import Variable
 
@@ -169,31 +170,49 @@ class ModelStatistic(ModuleEvaluation):
         pass
 
 class ModulePrediction(ModuleEvaluation):
-    def __init__(self, name, data, data_parameters, rand=False, metrics=[]):
+    def __init__(self, name, data, data_parameters, rand=False, metrics=[], include_data=False, include_score=False):
         super(ModulePrediction, self).__init__(name, data, data_parameters)
         self._rand = rand
         self._metrics = metrics
+        self._include_data = include_data
+        self._include_score = include_score
 
     def get_metrics(self):
         return self._metrics
 
     def _run_batch(self, model, batch):
-        return model.predict(batch, self._data_parameters, rand=self._rand).numpy()
+        pred = model.predict(batch, self._data_parameters, rand=self._rand, include_score=True)
+        return pred[0].numpy(), pred[1].numpy()
 
     def _aggregate_batch(self, agg, batch_result):
-        return np.concatenate((agg, batch_result), axis=0)
+        return np.concatenate((agg[0], batch_result[0]), axis=0), np.concatenate((agg[1], batch_result[1]), axis=0)
 
     def _initialize_result(self):
-        return np.array([])
+        return np.array([]), np.array([])
 
     def _finalize_result(self, result):
         batch_full = self._data.get_batch(0,self._data.get_size())
         y_true = batch_full[self._data_parameters[DataParameter.TARGET]].squeeze().numpy()
+
+        data_set = self._data.get_data()
+        data_set = DataSet(data=list(data_set.get_data()), id_key=data_set.get_id_key())
+
+        y_pred, score = result
+        final_result = None
         if len(self._metrics) == 0:
-            return y_true, result
+            final_result = [y_true, y_pred]
         else:
             if len(self._metrics) > 1:
-                return [metric.compute(y_true, result) for metric in self._metrics]
+                final_result = [metric.compute(y_true, y_pred) for metric in self._metrics]
             else:
-                return self._metrics[0].compute(y_true, result)
-            
+                final_result = [self._metrics[0].compute(y_true, y_pred)]
+
+        if self._include_data:
+            final_result.append(data_set)
+        if self._include_score:
+            final_result.append(score)
+
+        if len(final_result) > 1:
+            return tuple(final_result)
+        else:
+            return final_result[0]

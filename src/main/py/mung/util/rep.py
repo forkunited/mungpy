@@ -1,5 +1,6 @@
 import csv
 import numpy as np
+import codecs
 
 class StorageFormat:
     VEC = "VEC"
@@ -14,7 +15,10 @@ class StoredVectorDictionary:
             self._vecs = dict()
             if file_path is not None:
                 self._load(file_path, storage_format, delimiter, header_lines, transform_fn, normalized)
-        self._vec_size = self._vecs.values()[0].shape[0]
+        if len(self._vecs) == 0:
+            self._vec_size = 0
+        else:
+            self._vec_size = self._vecs.values()[0].shape[0]
 
     def to_dict(self):
         return self._vecs
@@ -40,9 +44,8 @@ class StoredVectorDictionary:
     def _load_from_vec(self, file_path, delimiter, header_lines, transform_fn, normalized):
         self._vecs = dict()
         lines = None
-        with open(file_path, "r") as f:
+        with codecs.open(file_path, encoding='utf-8') as f:
             lines = f.readlines()
-        
         vec_size = 0
         for i in range(header_lines, len(lines)):
             line_parts = lines[i].split(delimiter)

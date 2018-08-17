@@ -1,5 +1,6 @@
 import abc
 import sklearn.metrics
+import scipy.stats
 
 class Evaluation(object):
     __metaclass__ = abc.ABCMeta
@@ -68,14 +69,16 @@ class ClassificationReport(PredictionMetric):
             self._labels, self._target_names, self._sample_weight, self._digits)
 
 class ConfusionMatrix(PredictionMetric):
-    def __init__(self, name, labels=None, sample_weight=None):
+    def __init__(self, name, labels=None, sample_weight=None, target_names=None):
         super(ConfusionMatrix, self).__init__(name)
         self._labels = labels
         self._sample_weight = sample_weight
+        self._target_names = target_names
 
     def compute(self, y_true, y_pred):
-        return sklearn.metrics.confusion_matrix(y_true.astype(int), y_pred.astype(int), 
+        conf = sklearn.metrics.confusion_matrix(y_true.astype(int), y_pred.astype(int), 
             labels=self._labels, sample_weight=self._sample_weight)
+        return Table(conf, row_labels=self._target_names, column_labels=self._target_names)
 
 class F1(PredictionMetric):
     def __init__(self, name, labels=None, pos_label=1, average='weighted', sample_weight=None):
@@ -90,6 +93,37 @@ class F1(PredictionMetric):
             labels=self._labels, pos_label=self._pos_label, average=self._average, 
             sample_weight=self._sample_weight)
 
+class SpearmanR(PredictionMetric):
+    def __init__(self, name, include_p=True):
+        super(SpearmanR, self).__init__(name)
+        self._include_p = include_p
+
+    def compute(self, y_true, y_pred):
+        if self._include_p:
+            return scipy.stats.spearmanr(y_true, y_pred)
+        else:
+            return scipy.stats.spearmanr(y_true, y_pred)[0]
+
+class PearsonR(PredictionMetric):
+    def __init__(self, name, include_p=True):
+        super(PearsonR, self).__init__(name)
+        self._include_p = include_p
+
+    def compute(self, y_true, y_pred):
+        if self._include_p:
+            return scipy.stats.pearsonr(y_true, y_pred)
+        else:
+            return scipy.stats.pearsonr(y_true, y_pred)[0]
+
+class MAE(PredictionMetric):
+    def __init__(self, name, sample_weight=None, multioutput='uniform_average'):
+        super(MAE, self).__init__(name)
+        self._sample_weight = sample_weight
+        self._multioutput = multioutput
+    
+    def compute(self, y_true, y_pred):
+        return sklearn.metrics.mean_absolute_error(y_true, y_pred, \
+            sample_weight=self._sample_weight, multioutput=self._multioutput)
 
 class FoldedCV:
     # data : MultiviewDataSet or (key -> MultiviewDataSet)
@@ -172,4 +206,21 @@ class FoldedCV:
                                     .merge_parts([data_test_name], "test")
         return partitions_i
 
+class Table:
+    def __init__(self, values, row_labels=None, column_labels=None):
+        self._values = values
+        self._row_labels = row_labels
+        self._column_labels = column_labels
+    
+    def __str__(self):
+        s = ''
+        if self._column_labels is not None:
+            s += '\t'.join(['']+self._column_labels) + '\n'
+        if self._row_labels is not None:
+            for i, l in enumerate(self._row_labels):
+                s += '\t'.join([l]+[str(x) for x in self._values[i]]) + '\n'
+        else:
+            for i in range(len(self._values)):
+                s += '\t'.join([str(x) for x in self._values[i]]) + '\n'
 
+        return s
