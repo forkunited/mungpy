@@ -1,4 +1,5 @@
 import abc
+import numpy as np
 import sklearn.metrics
 import scipy.stats
 
@@ -124,6 +125,14 @@ class MAE(PredictionMetric):
     def compute(self, y_true, y_pred):
         return sklearn.metrics.mean_absolute_error(y_true, y_pred, \
             sample_weight=self._sample_weight, multioutput=self._multioutput)
+
+class Accuracy(PredictionMetric):
+    def __init__(self, name, tolerance=0.0):
+        super(Accuracy, self).__init__(name)
+        self._tolerance = tolerance
+    
+    def compute(self, y_true, y_pred):
+        return np.sum((np.abs(y_true - y_pred) <= self._tolerance).astype(np.float))/y_pred.shape[0]
 
 class FoldedCV:
     # data : MultiviewDataSet or (key -> MultiviewDataSet)

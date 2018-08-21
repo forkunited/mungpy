@@ -21,8 +21,8 @@ class DataParameter:
             return self._output
         elif key == DataParameter.ORDINAL:
             return self._ordinal
-        elif key == mung.torch_ext.eval.DataParameter.TARGET:
-            return self._output
+        else:
+            raise ValueError("Invalid data parameter: " + str(key))
     
     @staticmethod
     def make(input="input", output="output", ordinal="ordinal"):
@@ -61,8 +61,19 @@ class OrdinalLogisticLoss(nn.Module):
         s = (s >= 0).float()-(s < 0).float()
 
         # Compute all-threshold loss
-        return -torch.sum(self._log_sigmoid(s * input))
+        return -torch.sum((y >= 0).float()*self._log_sigmoid(s * input))
         
+class CombinedLoss(nn.Module):
+    def __init__(self, losses, weights):
+        super(CombinedLoss, self).__init__()
+        self._losses = losses
+        self._weights = weights
+
+    def forward(inputs, targets):
+        total_loss = 0.0
+        for i in range(len(inputs)):
+            total_loss += self._weights[i]*self._losses[i](inputs[i], targets[i])
+        return total_loss
 
 class LinearModel(nn.Module):
     def __init__(self, name, input_size, output_size=1, init_params=None, bias=False, continuous_output=False):
@@ -77,7 +88,6 @@ class LinearModel(nn.Module):
             self._linear.weight = nn.Parameter(init_params.unsqueeze(0))
         else:
             self._linear.weight = nn.Parameter(torch.zeros(self._output_size,self._input_size))
-
 
     def get_name(self):
         return self._name
@@ -108,11 +118,8 @@ class LinearModel(nn.Module):
         return self(input)
 
     def loss(self, batch, data_parameters, loss_criterion):
-        utterance = None
-        input = batch[data_parameters[DataParameter.INPUT]]
         output = batch[data_parameters[DataParameter.OUTPUT]]
         if self.on_gpu():
-            input = input.cuda()
             output = output.cuda()
 
         model_out = self.forward_batch(batch, data_parameters).squeeze()
@@ -188,6 +195,28 @@ class OrdinalLogisticRegression(LinearModel):
     def get_loss_criterion(self):
         return self._olloss
 
+class PairwiseLogisticRegression(LinearModel):
+    def __init__(self, name, input_size, init_params=None, bias=False):
+        super(PairwiseLogisticRegression, self).__init__(name, input_size, init_params=init_params, bias=bias)
+        self._lrloss = LRLoss(size_average=False)
+        self._sigmoid = nn.Sigmoid()
+
+    def forward(self, input):
+        return self._linear(input[0] - input[1])
+
+    def predict(self, batch, data_parameters, rand=False):
+        p = self._sigmoid(self.forward_batch(batch, data_parameters))
+        if not rand:
+            return p > 0.5
+        else:
+            return torch.bernoulli(p)
+
+    def default_loss(self, batch, data_parameters):
+        return self.loss(batch, data_parameters, self._lrloss)
+
+    def get_loss_criterion(self):
+        return self._lrloss
+
 # See http://ttic.uchicago.edu/~nati/Publications/RennieSrebroIJCAI05.pdf
 class OrdisticRegression(LinearModel):
     def __init__(self, name, input_size, label_count, init_params=None, bias=False):
@@ -242,15 +271,16 @@ class MultinomialLogisticRegression(LinearModel):
     def get_loss_criterion(self):
         return self._celoss
 
-# FIXME
-# Use ordinal loss + pairwise loss in straightforward way on each example
+
 class PairwiseOrdinalLogisticRegression(LinearModel):
-    def __init__(self, name, input_size, label_count, init_params=None, bias=False):
+    def __init__(self, name, input_size, label_count, init_params=None, bias=False, alpha=0.5):
         super(PairwiseOrdinalLogisticRegression, self).__init__(name, input_size, output_size=1, init_params=init_params, bias=bias)
         self._theta = nn.Parameter(torch.zeros(label_count-1))
-        #self._olloss = OrdinalLogisticLoss(label_count)
-        #self._lrloss = LRLoss(size_average=False)
-        self._loss = # FIXME
+        self._sigmoid = nn.Sigmoid()
+        self._alpha = alpha
+        self._loss = CombinedLoss(\
+            [LRLoss(size_average=False), OrdinalLogisticLoss(label_count), OrdinalLogisticLoss(label_count)],\
+            [1.0-alpha, 0.5*self._alpha, 0.5*self._alpha])
 
     def forward(self, input):
         K = self._theta.size(0)
@@ -259,52 +289,38 @@ class PairwiseOrdinalLogisticRegression(LinearModel):
             out_pair = self._linear(input[0] - input[1])
             out_ord0 = self._theta.unsqueeze(0).expand(B, K) - self._linear(input[0]).squeeze().unsqueeze(1).expand(B, K)
             out_ord1 = self._theta.unsqueeze(0).expand(B, K) - self._linear(input[1]).squeeze().unsqueeze(1).expand(B, K)
-            return torch.cat((out_pair, out_ord0, out_ord1), dim=1)
+            return [out_pair, out_ord0, out_ord1]
         else:
             B = input.size(0)            
             return self._theta.unsqueeze(0).expand(B, K) - self._linear(input).squeeze().unsqueeze(1).expand(B, K)
 
-    def forward_batch(self, batch, data_parameters, include_ordinal=True):
-        # FIXME
-        input = Variable(batch[data_parameters[DataParameter.INPUT]])
-        ordinal = Variable(batch[data_parameters[DataParameter.ORDINAL]])
-        if self.on_gpu():
-            input = input.cuda()
-            ordinal = ordinal.cuda()
-
-        if include_ordinal:
-            return self(input, ordinal=ordinal)
-        else:
-            return self(input)
-
     def loss(self, batch, data_parameters, loss_criterion):
-        # FIXME
-        utterance = None
-        input = batch[data_parameters[DataParameter.INPUT]]
         output = batch[data_parameters[DataParameter.OUTPUT]]
         ordinal = Variable(batch[data_parameters[DataParameter.ORDINAL]])
         if self.on_gpu():
-            input = input.cuda()
             output = output.cuda()
             ordinal = ordinal.cuda()
 
         model_out = self.forward_batch(batch, data_parameters).squeeze()
         target_out = Variable(output).squeeze().long()
-        return loss_criterion(model_out, target_out)
+        ordinal_out = Variable(ordinal).squeeze().long()
+        return loss_criterion(model_out, [target_out, ordinal_out[0], ordinal_out[1]])
 
     def predict(self, batch, data_parameters, rand=False, include_score=False):
-        # FIXME Do proper prediction for pairs...
         if rand:
             raise ValueError("Random predictions unsupported by PairwiseOrdinalLogisticRegression")
 
         out = self.forward_batch(batch, data_parameters, include_ordinal=False)
-        if include_score:
-            return torch.sum(out < 0, 1).long(), out[:,0].squeeze().detach()
+        if isinstance(out, list): # FIXME Currently a hack to check whether predicting over pair or singleton
+            p = self._sigmoid(self.forward_batch(batch, data_parameters))
+            return torch.bernoulli(p)
         else:
-            return torch.sum(out < 0, 1).long()
+            if include_score:
+                return torch.sum(out < 0, 1).long(), out[:,0].squeeze().detach()
+            else:
+                return torch.sum(out < 0, 1).long()
 
     def default_loss(self, batch, data_parameters):
-        # FIXME
         return self.loss(batch, data_parameters, self._loss)
 
     def get_loss_criterion(self):

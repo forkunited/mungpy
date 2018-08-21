@@ -190,9 +190,19 @@ class DataSet:
     def partition(self, partition, key_fn):
         return partition.split(self, key_fn)
 
+    def union(self, other):
+        data_union = []
+        data_union.extend(self._data)
+        data_union.extend(other._data)
+        return DataSet(data=data_union, id_key=self._id_key, source_dir=None)
+
     def save(self, data_dir, batch=1000):
+        self._source_dir = data_dir
+
+        if not os.path.exists(data_dir):
+            os.makedirs(data_dir)
+
         if batch is None:
-            self._source_dir = data_dir
             for datum in self._data:
                 datum.save(data_dir)
         else:
@@ -331,8 +341,9 @@ class Partition:
             if key not in P._parts:
                 P._parts[key] = dict()
             for item in other_part._parts[key].keys():
-                if item in P._parts[key]:
-                    raise ValueError("Duplicate item in partitions (" + item + ")")
+                for key2 in P._parts.keys():
+                    if item in P._parts[key2]:
+                        raise ValueError("Duplicate item in partitions (" + item + ")")
                 P._parts[key][item] = other_part._parts[key][item]
         return P
 

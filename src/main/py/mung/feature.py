@@ -1254,6 +1254,16 @@ class DataFeatureMatrix:
             dfmat_parts[key] = DataFeatureMatrix(data_part, self._feature_set, init_features=False, mat=mat_part, compute_non_zero=self._compute_nz)
         return dfmat_parts
 
+    def union(self, other, data=None):
+        data_union = None
+        if data is not None:
+            data_union = data
+        else:
+            data = self._data.union(other._data)
+
+        mat_union = np.concatenate((self._mat, other._mat), axis=0)
+        return DataFeatureMatrix(data_union, self._feature_set, init_features=False, mat=mat_union, compute_non_zero=False)
+
     def filter(self, filter_fn):
         filtered_data = self._data.filter(filter_fn)
 
@@ -1498,6 +1508,9 @@ class DataFeatureMatrixSequence:
 
         return dfmats_parts
 
+    def union(self, other, data=None):
+        raise NotImplementedError("Union not yet implemented for sequences.")
+
     def filter(self, filter_fn):
         filtered_data = self._data.filter(filter_fn)
 
@@ -1608,6 +1621,9 @@ class MultiviewDataSet:
     def get_data(self):
         return self._data
 
+    def get_dfmats(self):
+        return dict(self._dfmats)
+
     def get_size(self):
         return self._data.get_size()
 
@@ -1652,6 +1668,56 @@ class MultiviewDataSet:
                 mv_parts[key]._dfmatseqs[name] = dfmatseq_part
 
         return mv_parts
+
+    def union(self, other, first_views=None, second_views=None, missing_defaults=None):
+        if first_views is None:
+            first_views = set(self._dfmats.keys()).union(set(self._dfmatseqs.keys()))
+        if second_views is None:
+            second_views = first_views
+        if missing_defaults is None:
+            missing_defaults = dict()
+
+        data_union = self._data.union(other)
+        dfmats_union = dict()
+        dfmatseqs_union = dict()
+
+        all_views = first_views.union(second_views)
+        for view in all_views:
+            if view in first_views and view in second_views:
+                if view in self._dfmats:
+                    dfmats_union[view] = self._dfmats[view].union(other._dfmats[view], data=data_union)
+                elif view in self._dfmatseqs:
+                    dfmatseqs_union[view] = self._dfmatseqs[view].union(other._dfmatseqs[view], data=data_union)
+                else:
+                    raise ValueError("Missing view for union " + str(view))
+            elif view in first_views and view not in second_views:
+                if view not in missing_defaults:
+                    raise ValueError("Ommitted view requires default: " + str(view))
+
+                if view in self._dfmats:
+                    default_mat = np.zeros(shape=other._dfmats[view].get_matrix().shape)
+                    default_mat[:] = missing_defaults[view]
+                    default_dfmat = DataFeatureMatrix(other._data, other._dfmats[view].get_feature_set(), init_features=False, mat=default_mat, compute_non_zero=False)
+                    dfmats_union[view] = self._dfmats[view].union(default_dfmat, data=data_union)
+                elif view in self._dfmatseqs:
+                    raise NotImplementedError("Unioning sequence views not yet implemented.")
+                else:
+                    raise ValueError("Missing view for union " + str(view))
+            elif view not in first_views and view in second_views:
+                if view not in missing_defaults:
+                    raise ValueError("Ommitted view requires default: " + str(view))
+
+                if view in other._dfmats:
+                    default_mat = np.zeros(shape=self._dfmats[view].get_matrix().shape)
+                    default_mat[:] = missing_defaults[view]
+                    default_dfmat = DataFeatureMatrix(self._data, self._dfmats[view].get_feature_set(), init_features=False, mat=default_mat, compute_non_zero=False)
+                    dfmats_union[view] = default_dfmat.union(other._dfmats[view], data=data_union)
+                elif view in self._dfmatseqs:
+                    raise NotImplementedError("Unioning sequence views not yet implemented.")
+                else:
+                    raise ValueError("Missing view for union " + str(view))
+
+        return MultiviewDataSet(data=data_union, dfmats=dfmats_union, dfmatseqs=dfmatseqs_union, ordering_seq=self._ordering_seq)
 
     def filter(self, filter_fn):
         data_filtered = self._data.filter(filter_fn)
@@ -1768,6 +1834,8 @@ class MultiviewDataSet:
         return mv
 
 class PairedFeatureType:
+    ZERO_ONE_DIFFERENCE = "ZERO_ONE_DIFFERENCE"
+    SIGNED_DIFFERENCE = "SIGNED_DIFFERENCE"
     DIFFERENCE = "DIFFERENCE"
     TUPLE = "TUPLE"
 
@@ -1776,6 +1844,9 @@ class PairedMultiviewDataSet:
         self._mvdata = mvdata
         self._data_indices = data_indices
         self._paired_feature_types = paired_feature_types
+
+    def get_dfmats(self):
+        return self._mvdata.get_dfmats()
 
     def get_datum_pair(self, index):
         data = self._mvdata.get_data()
@@ -1828,17 +1899,35 @@ class PairedMultiviewDataSet:
 
         batch_dict = dict()
         for mat_view in mat_views:
-            if self._paired_feature_types[mat_view] == PairedFeatureType.DIFFERENCE:
-                batch_dict[mat_view] = batch_dict1[mat_view] - batch_dict2[mat_view]
-            elif self._paired_feature_types[mat_view] == PairedFeatureType.TUPLE:
-                batch_dict[mat_view] = (batch_dict1[mat_view], batch_dict2[mat_view])
+            if isinstance(self._paired_feature_types[mat_view], dict):
+                for paired_view, paired_view_type in self._paired_feature_types[mat_view].iteritems():
+                    batch_dict[paired_view] = self._compute_paired_value(batch_dict1[mat_view], batch_dict2[mat_view], paired_view_type)
             else:
-                raise ValueError(mat_view + " has invalid paired feature type.")
+                batch_dict[mat_view] = self._compute_paired_value(batch_dict1[mat_view], batch_dict2[mat_view], self._paired_feature_types[mat_view])
 
         if return_indices:
             return batch_dict, batch_indices
         else:
             return batch_dict
+
+    def _compute_paired_value(self, mat1, mat2, paired_view_type):
+        if paired_view_type == PairedFeatureType.DIFFERENCE:
+            return mat1 - mat2
+        elif paired_view_type == PairedFeatureType.SIGNED_DIFFERENCE:
+            return self._untyped_sign(mat1 - mat2)
+        elif paired_view_type == PairedFeatureType.ZERO_ONE_DIFFERENCE:
+            return (self._untyped_sign(mat1 - mat2) + 1.0)/2.0
+        elif paired_view_type == PairedFeatureType.TUPLE:
+            return (mat1, mat2)
+        else:
+            raise ValueError(paired_view + " has invalid paired feature type.")
+
+    def _untyped_sign(self, v):
+        v = (v > 0) - (v < 0)
+        if isinstance(v, np.ndarray):
+            return v.astype(np.float)
+        else:
+            return v.float()
 
     def partition(self, partition, key_fn):
         data_indices_parts = dict()
@@ -1856,9 +1945,14 @@ class PairedMultiviewDataSet:
         for i in range(self._data_indices.shape[0]):
             k1 = key_fn(self._mvdata.get_data().get(self._data_indices[i,0]))
             k2 = key_fn(self._mvdata.get_data().get(self._data_indices[i,1]))
-            if reverse_part[k1] != reverse_parts[k2]:
-                raise ValueError("Data pairs extend across partition parts.")
-            part_key = reverse_part[k1]
+
+            if k1 not in reverse_parts or k2 not in reverse_parts:
+                continue
+
+            if reverse_parts[k1] != reverse_parts[k2]:
+                raise ValueError("Data pairs extend across partition parts (" + str(k1) + \
+                ": " + str(reverse_parts[k1]) + ", " + str(k2) + ": " + str(reverse_parts[k2]) + ").")
+            part_key = reverse_parts[k1]
             if part_key not in data_indices_parts:
                 data_indices_parts[part_key] = []
 
@@ -1873,20 +1967,25 @@ class PairedMultiviewDataSet:
             else:
                 indices_array = np.zeros(shape=(len(data_indices_parts[part_key]),2))
                 for i in range(len(data_indices_parts[part_key])):
-                    indices_array[i,0] = data_indices_parts[i][0]
-                    indices_array[i,1] = data_indices_parts[i][1]
+                    indices_array[i,0] = data_indices_parts[part_key][i][0]
+                    indices_array[i,1] = data_indices_parts[part_key][i][1]
             data_indices_parts[part_key] = indices_array
-                
-        
 
         pmv_parts = dict()
         for k, v in mv_parts.iteritems():
-            pmv_parts = PairedMultiviewDataSet(v, data_indices_parts[k], self._paired_feature_fns)
+            pmv_parts[k] = PairedMultiviewDataSet(v, data_indices_parts[k], self._paired_feature_types)
 
         return pmv_parts
 
+    def union(self, other, first_views=None, second_views=None, missing_defaults=None):
+        mvdata_union = self._mvdata.union(other._mvdata, first_views=first_views, second_views=second_views, missing_defaults=missing_defaults)
+        data_indices_union = np.concatenate((self._data_indices, other._data_indices + self._mvdata.get_size()), axis=0)
+        paired_feature_types_union = dict(self._paired_feature_types)
+
+        return PairedMultiviewDataSet(mvdata_union, data_indices_union, paired_feature_types_union)
+
     def __getitem__(self, key):
-        raise NotImplementedError()
+        return self._mvdata[key] # NOTE: This may lead to problems...
 
     def get_data(self):
         raise NotImplementedError()
@@ -1912,6 +2011,7 @@ class PairedMultiviewDataSet:
 
         info = dict()
         info["paired_feature_types"] = self._paired_feature_types
+        info["data_order"] = [self._mvdata.get_data().get(i).get_id() for i in range(self._mvdata.get_size())]
         with open(info_path, 'w') as fp:
             json.dump(info, fp)
 
@@ -1925,9 +2025,20 @@ class PairedMultiviewDataSet:
         data_indices = np.load(indices_path)
         
         paired_feature_types = None
+        data_order = None 
         with open(info_path, 'r') as fp:
             obj = json.load(fp)
             paired_feature_types = obj["paired_feature_types"]
+            data_order = obj["data_order"]
+
+        cur_data_to_indices = dict()
+        for i in range(mvdata.get_size()):
+            cur_data_to_indices[mvdata.get_data()[i].get_id()] = i 
+        index_map = [cur_data_to_indices[data_order[i]] for i in range(len(data_order))]
+
+        for i in range(data_indices.shape[0]):
+            data_indices[i,0] = index_map[data_indices[i,0]]
+            data_indices[i,1] = index_map[data_indices[i,1]]
 
         return PairedMultiviewDataSet(mvdata, data_indices, paired_feature_types)
 

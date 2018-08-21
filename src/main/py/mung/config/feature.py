@@ -1,9 +1,10 @@
-from mung.feature import MultiviewDataSet, SubsetType
+from mung.feature import MultiviewDataSet, SubsetType, PairedMultiviewDataSet
 from mung.data import Partition
 
 # Expects config of the form:
 # {
-#   data_path : [PATH TO DATA SET]
+#   data_path : [PATH TO DATA SET],
+#   (Optional) paired_data_path : [PATH TO PAIRED DATA],
 #   mats : {
 #     dfmat_paths : [DICTIONARY OF DFMAT PATHS]
 #     dfmatseq_paths : [DICTIONARY OF DFMATSEQ PATHS]
@@ -22,10 +23,15 @@ from mung.data import Partition
 #     ]
 #   }
 # }
-def load_mvdata(config):
+def load_mvdata(config, ignore_paired_data=True):
     data_path = config["data_path"]
     mats = config["mats"]
     D = MultiviewDataSet.load(data_path, **mats)
+
+    D_paired = None
+    if (not ignore_paired_data) and "paired_data_path" in config:
+        D_paired = PairedMultiviewDataSet.load(config["paired_data_path"], D)
+
     S = dict()
     if "subsets" in config:
         for item in config["subsets"]:
@@ -87,4 +93,8 @@ def load_mvdata(config):
                             d_match = (d_match and d.get(d_key) < d_value)
                         return d_match
                     S[item["name"]] = D_cur.filter(f)
-    return D, S
+
+    if D_paired is not None:
+        return D, S, D_paired
+    else:
+        return D, S

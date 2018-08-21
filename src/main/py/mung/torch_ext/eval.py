@@ -9,15 +9,6 @@ from torch.autograd import Variable
 
 EVALUATION_BATCH_SIZE = 64 #16 #10 #100
 
-class DataParameter:
-    TARGET = "target"
-
-    @staticmethod
-    def make(target="target"):
-        data_parameters = dict()
-        data_parameters[DataParameter.TARGET] = target
-        return data_parameters
-
 class ModuleEvaluation(Evaluation):
     __metaclass__ = abc.ABCMeta
 
@@ -102,8 +93,9 @@ class Loss(ModuleEvaluation):
             return result / self._data.get_size()
 
 class DistributionAccuracy(ModuleEvaluation):
-    def __init__(self, name, data, data_parameters, model_fn=None, target_indexed = False, check_unique = False, trials=1):
+    def __init__(self, name, data, data_parameters, target_parameter, model_fn=None, target_indexed = False, check_unique = False, trials=1):
         super(DistributionAccuracy, self).__init__(name, data, data_parameters, trials=trials)
+        self._target_parameter = target_parameter
         self._model_fn = model_fn
         self._target_indexed = target_indexed
         self._check_unique = check_unique
@@ -115,7 +107,7 @@ class DistributionAccuracy(ModuleEvaluation):
         else:
             dist = self._model_fn(batch, model, self._data_parameters)
 
-        target = batch[self._data_parameters[DataParameter.TARGET]].squeeze()
+        target = batch[self._data_parameters[self._target_parameter]].squeeze()
 
         model_ps = dist.p().data.cpu()
         max_ps, max_index = torch.max(model_ps, 1, keepdim=True)
@@ -170,8 +162,9 @@ class ModelStatistic(ModuleEvaluation):
         pass
 
 class ModulePrediction(ModuleEvaluation):
-    def __init__(self, name, data, data_parameters, rand=False, metrics=[], include_data=False, include_score=False):
+    def __init__(self, name, data, data_parameters, target_parameter, rand=False, metrics=[], include_data=False, include_score=False):
         super(ModulePrediction, self).__init__(name, data, data_parameters)
+        self._target_parameter = target_parameter
         self._rand = rand
         self._metrics = metrics
         self._include_data = include_data
@@ -192,7 +185,7 @@ class ModulePrediction(ModuleEvaluation):
 
     def _finalize_result(self, result):
         batch_full = self._data.get_batch(0,self._data.get_size())
-        y_true = batch_full[self._data_parameters[DataParameter.TARGET]].squeeze().numpy()
+        y_true = batch_full[self._data_parameters[self._target_parameter]].squeeze().numpy()
 
         data_set = self._data.get_data()
         data_set = DataSet(data=list(data_set.get_data()), id_key=data_set.get_id_key())
