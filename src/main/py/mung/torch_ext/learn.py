@@ -75,6 +75,7 @@ class Trainer:
         self._logger.save()
 
         b = 0
+        data.shuffle()
         for i in range(1, iterations + 1):
             batch = None
             if self._sample_with_replacement:

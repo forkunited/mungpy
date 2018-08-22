@@ -187,9 +187,6 @@ class ModulePrediction(ModuleEvaluation):
         batch_full = self._data.get_batch(0,self._data.get_size())
         y_true = batch_full[self._data_parameters[self._target_parameter]].squeeze().numpy()
 
-        data_set = self._data.get_data()
-        data_set = DataSet(data=list(data_set.get_data()), id_key=data_set.get_id_key())
-
         y_pred, score = result
         final_result = None
         if len(self._metrics) == 0:
@@ -201,6 +198,8 @@ class ModulePrediction(ModuleEvaluation):
                 final_result = [self._metrics[0].compute(y_true, y_pred)]
 
         if self._include_data:
+            data_set = self._data.get_data()
+            data_set = DataSet(data=list(data_set.get_data()), id_key=data_set.get_id_key())
             final_result.append(data_set)
         if self._include_score:
             final_result.append(score)

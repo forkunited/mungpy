@@ -1842,7 +1842,7 @@ class PairedFeatureType:
 class PairedMultiviewDataSet:
     def __init__(self, mvdata, data_indices, paired_feature_types):
         self._mvdata = mvdata
-        self._data_indices = data_indices
+        self._data_indices = data_indices.astype(np.int32)
         self._paired_feature_types = paired_feature_types
 
     def get_dfmats(self):
@@ -1863,15 +1863,15 @@ class PairedMultiviewDataSet:
         if size > self.get_size():
             raise ValueError("Batch size cannot be greater than data set size")
         batch_indices = np.random.choice(self.get_size(), size, replace=False)
-        return self.get_batch_by_indices(batch_indices, sort_lengths=sort_lengths,
-                                         mat_views=mat_views, seq_views=seq_views, return_indices=return_indices)
+        return self.get_batch_by_indices(batch_indices,
+                                         mat_views=mat_views, return_indices=return_indices)
 
     def get_batch(self, batch_i, size, sort_lengths=True, mat_views=None, seq_views=None, return_indices=False):
         if size > self.get_size():
             raise ValueError("Batch size cannot be greater than data set size")
         return self.get_batch_by_indices(np.array(range(batch_i*size, (batch_i+1)*size)),
-                                         sort_lengths=sort_lengths, mat_views=mat_views,
-                                         seq_views=seq_views, return_indices=return_indices)
+                                         mat_views=mat_views,
+                                         return_indices=return_indices)
 
     def get_final_batch(self, size, sort_lengths=True, mat_views=None, seq_views=None, return_indices=False):
         if size > self.get_size():
@@ -1880,8 +1880,8 @@ class PairedMultiviewDataSet:
         if final_size == 0:
             return None
         return self.get_batch_by_indices(np.array(range(self.get_size() - final_size, self.get_size())),
-                                         sort_lengths=sort_lengths, mat_views=mat_views,
-                                         seq_views=seq_views, return_indices=return_indices)
+                                        mat_views=mat_views,
+                                        return_indices=return_indices)
     def get_num_batches(self, size):
         if size > self.get_size():
             raise ValueError("Batch size cannot be greater than data set size")
@@ -1890,7 +1890,7 @@ class PairedMultiviewDataSet:
     def get_batch_by_indices(self, batch_indices, mat_views=None, return_indices=False):
         mv_indices1 = self._data_indices[batch_indices,0]
         mv_indices2 = self._data_indices[batch_indices,1]
-
+        
         batch_dict1 = self._mvdata.get_batch_by_indices(mv_indices1, mat_views=mat_views, seq_views=[])
         batch_dict2 = self._mvdata.get_batch_by_indices(mv_indices2, mat_views=mat_views, seq_views=[])
 
@@ -1923,11 +1923,10 @@ class PairedMultiviewDataSet:
             raise ValueError(paired_view + " has invalid paired feature type.")
 
     def _untyped_sign(self, v):
-        v = (v > 0) - (v < 0)
         if isinstance(v, np.ndarray):
-            return v.astype(np.float)
+            return (v > 0).astype(np.float) - (v < 0).astype(np.float)
         else:
-            return v.float()
+            return (v > 0).float() - (v < 0).float()
 
     def partition(self, partition, key_fn):
         data_indices_parts = dict()

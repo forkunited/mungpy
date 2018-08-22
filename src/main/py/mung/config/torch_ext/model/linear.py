@@ -34,7 +34,7 @@ def load_linear_model(config, D, gpu=False):
     elif config["arch_type"] == "PairwiseOrdinalLogisticRegression":
         alpha = 0.5
         if "alpha" in config:
-            alpha = config["alpha"]
+            alpha = float(config["alpha"])
         label_count = config["label_count"]
         model = PairwiseOrdinalLogisticRegression(name, input_size, label_count, bias=bias, alpha=alpha)
     else: # LinearRegression
