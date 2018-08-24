@@ -32,11 +32,11 @@ def load_linear_model(config, D, gpu=False):
         label_count = config["label_count"]
         model = OrdisticRegression(name, input_size, label_count, bias=bias)
     elif config["arch_type"] == "PairwiseOrdinalLogisticRegression":
-        alpha = 0.5
-        if "alpha" in config:
-            alpha = float(config["alpha"])
+        ordinal_rescaling = 1.0
+        if "ordinal_rescaling" in config:
+            ordinal_rescaling = float(config["ordinal_rescaling"])
         label_count = config["label_count"]
-        model = PairwiseOrdinalLogisticRegression(name, input_size, label_count, bias=bias, alpha=alpha)
+        model = PairwiseOrdinalLogisticRegression(name, input_size, label_count, bias=bias, ordinal_rescaling=ordinal_rescaling)
     else: # LinearRegression
         model = LinearRegression(name, input_size, bias=bias)
     if gpu:

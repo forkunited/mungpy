@@ -74,8 +74,10 @@ class Trainer:
         self._logger.log(results)
         self._logger.save()
 
+        if not self._sample_with_replacement:
+            data.shuffle()
+
         b = 0
-        data.shuffle()
         for i in range(1, iterations + 1):
             batch = None
             if self._sample_with_replacement:
@@ -120,9 +122,9 @@ class Trainer:
                     ((not self._max_evaluation) and main_result < best_result):
                     best_result = main_result
                     if self._best_part_fn is None:
-                        self._best_part = copy.deepcopy(model)
+                        best_part = copy.deepcopy(model)
                     else:
-                        self._best_part = copy.deepcopy(self._best_part_fn(model))
+                        best_part = copy.deepcopy(self._best_part_fn(model))
                     best_iteration = i
 
                 total_loss = 0.0

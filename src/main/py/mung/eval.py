@@ -2,6 +2,7 @@ import abc
 import numpy as np
 import sklearn.metrics
 import scipy.stats
+from mung.data import DataSet
 
 class Evaluation(object):
     __metaclass__ = abc.ABCMeta
@@ -155,10 +156,13 @@ class FoldedCV:
         self._exclude_parts = exclude_parts
 
     def run(self, model_config, train_evaluation_config, \
-            dev_evaluation_config, trainer_config, logger):
+            dev_evaluation_config, trainer_config, data_metrics, logger):
         part_names = list(set(self._partitions.itervalues().next().get_part_names()) - self._exclude_parts)
         k = len(part_names) # k-fold cv with parts
         results = []
+        models = []
+        data_parameters = []
+        datas = dict()
         for i in range(k): # Iterate over folds
             partitions_i = self._make_fold_partition(part_names, i)
             datas_i = dict()
@@ -182,6 +186,10 @@ class FoldedCV:
 
                 D_params = d_parts["train"]
 
+                if key not in datas:
+                    datas[key] = []
+                datas[key].append(d_parts["test"])
+
             # Load model and evaluations
             data_parameter, model = self._load_model_fn(model_config, D_params)
             train_evaluations = self._load_evaluation_fn(train_evaluation_config, datas_i, data_parameter)
@@ -190,8 +198,12 @@ class FoldedCV:
             # Train and evaluate on current fold (i)
             _, best_model, _ = self._train_fn(trainer_config, data_parameter, \
                 model.get_loss_criterion(), logger, train_evaluations, model, datas_i)
-            results.append(Evaluation.run_all(dev_evaluations, model, flatten_result=False))
-        return results, data_parameter
+
+            models.append(best_model)
+            data_parameters.append(data_parameter)
+            results.append(Evaluation.run_all(dev_evaluations, best_model, flatten_result=False))
+
+        return FoldedCVResults(models, data_parameters, results, datas, data_metrics)
 
     def _make_fold_partition(self, part_names, i):
         data_test_name = part_names[i]
@@ -215,6 +227,94 @@ class FoldedCV:
                                     .merge_parts([data_test_name], "test")
         return partitions_i
 
+class FoldedCVResults:
+    def __init__(self, fold_models, data_parameters, fold_evaluations, datas, data_metrics):
+        self._fold_models = fold_models
+        self._data_parameters = data_parameters
+        self._fold_evaluations = fold_evaluations
+        self._datas = datas
+        self._data_metrics = data_metrics
+
+    def _merge_data(self, data_name):
+        full_data = DataSet(data=[])
+        for data in self._datas[data_name]:
+            full_data = full_data.union(data.get_data())
+        return full_data
+
+    def _predict_data(self, data_name):
+        y_pred = np.array([])
+        data = self._datas[data_name]
+        for i in range(self.get_fold_count()):
+            y_pred_i = self._fold_models[i].predict_data(data[i], self._data_parameters[i], rand=False)
+            y_pred = np.concatenate((y_pred,y_pred_i))
+        return y_pred
+
+    def _view_data(self, data_name, target_parameter):
+        target = np.array([])
+        data = self._datas[data_name]
+        for i in range(self.get_fold_count()):
+            target_i = data[i].get_batch(0,data[i].get_size())[self._data_parameters[i][target_parameter]].squeeze().numpy()
+            target = np.concatenate((target, target_i))
+        return target
+
+    def _score_data(self, data_name):
+        y_score = np.array([])
+        data = self._datas[data_name]
+        for i in range(self.get_fold_count()):
+            y_score_i = self._fold_models[i].score_data(data[i], self._data_parameters[i])
+            y_score = np.concatenate((y_score,y_score_i))
+        return y_score
+
+    def get_data_parameter(self, fold_index=0):
+        return self._data_parameters[fold_index]
+
+    def get_data_names(self):
+        return self._datas.keys()
+
+    def get_fold_count(self):
+        return len(self._fold_models)
+
+    def get_prediction_table(self, data_name, datum_str_fn, datum_true_fn, pred_str_fn, datum_type_name="datum"):
+        merged_data = self._merge_data(data_name)
+        y_pred = self._predict_data(data_name)
+        y_score = self._score_data(data_name)
+        table_rows = []
+        for i in range(merged_data.get_size()):
+            table_rows.append([datum_str_fn(merged_data[i]), \
+                               datum_true_fn(merged_data[i]), \
+                               pred_str_fn(y_pred[i]), \
+                               y_score[i]])
+        return Table(table_rows, column_labels=[datum_type_name, "y_true", "y_pred", "score"])
+            
+    def get_fold_evaluation_results(self, i):
+        return self._fold_evaluations[i]
+
+    def get_data_metric_results(self, data_name):
+        prediction_metrics = self._data_metrics[data_name]["prediction_metrics"]
+        score_metrics = self._data_metrics[data_name]["score_metrics"]
+        target_parameter = self._data_metrics[data_name]["target_parameter"]
+        y_pred = self._predict_data(data_name)
+        y_score = self._score_data(data_name)
+        y_true = self._view_data(data_name, target_parameter)
+        results = dict()
+        for metric in prediction_metrics:
+            results[metric.get_name()] = metric.compute(y_true, y_pred)
+        for metric in score_metrics:
+            results[metric.get_name()] = metric.compute(y_true, y_score)
+        return results
+
+    def get_data_metric_results_string(self, data_name):
+        results = self.get_data_metric_results(data_name)
+        results_str = ""
+        for metric_name, metric_value in results.iteritems():
+            if isinstance(metric_value, str):
+                results_str += "-------------" + metric_name + "-------------\n"
+                results_str += metric_value
+                results_str += "---------------------------------------------\n"
+            else:
+                results_str += metric_name + "\t" + str(metric_value) + "\n"
+        return results_str
+
 class Table:
     def __init__(self, values, row_labels=None, column_labels=None):
         self._values = values
@@ -222,14 +322,23 @@ class Table:
         self._column_labels = column_labels
     
     def __str__(self):
+        values = []
+        for i in range(len(self._values)):
+            values.append([])
+            for j in range(len(self._values[i])):
+                if isinstance(self._values[i][j],float) or isinstance(self._values[i][j], int):
+                    values[i].append(str(self._values[i][j]))
+                else:
+                    values[i].append(self._values[i][j].encode("utf-8"))
+
         s = ''
         if self._column_labels is not None:
             s += '\t'.join(['']+self._column_labels) + '\n'
         if self._row_labels is not None:
             for i, l in enumerate(self._row_labels):
-                s += '\t'.join([l]+[str(x) for x in self._values[i]]) + '\n'
+                s += '\t'.join([l]+[x for x in values[i]]) + '\n'
         else:
             for i in range(len(self._values)):
-                s += '\t'.join([str(x) for x in self._values[i]]) + '\n'
+                s += '\t'.join([x for x in values[i]]) + '\n'
 
         return s

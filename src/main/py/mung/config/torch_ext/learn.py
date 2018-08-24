@@ -28,6 +28,10 @@ def train_from_config(config, data_parameter, loss_criterion, logger, evaluation
     gradient_clipping = None
     if "gradient_clipping" in config:
         gradient_clipping = float(config["gradient_clipping"])
+
+    sample_with_replacement = False
+    if "sample_with_replacement" in config:
+        sample_with_replacement = bool(int(config["sample_with_replacement"]))
     
     log_interval = int(config["log_interval"])
 
@@ -36,7 +40,7 @@ def train_from_config(config, data_parameter, loss_criterion, logger, evaluation
             max_evaluation=bool(int(config["max_evaluation"])), \
             batch_size=batch_size, optimizer_type=optimizer_type, lr=learning_rate, \
             weight_decay=weight_decay, grad_clip=gradient_clipping, log_interval=log_interval, 
-            best_part_fn=best_part_fn)
+            best_part_fn=best_part_fn, sample_with_replacement=sample_with_replacement)
     
     last_model, best_part, best_iteration = trainer.train(model, data, iterations)
     return last_model, best_part, best_iteration

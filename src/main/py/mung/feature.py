@@ -2071,6 +2071,35 @@ class PairedMultiviewDataSet:
 
         return PairedMultiviewDataSet(mvdata, data_indices, paired_feature_types)
 
+class MixedBatchData:
+    def __init__(self, datas, proportions=None):
+        self._datas = datas
+        
+        if proportions is None:
+            self._proportions = np.zeros(shape=len(datas))
+            self._proportions[:] = 1.0/len(datas)
+        else:
+            self._proportions = proportions
+
+    def get_random_batch(self, size):
+        data_index = np.random.choice(len(self._datas), size=1, p=self._proportions)[0]
+
+        return self._datas[data_index].get_random_batch(size)
+
+    def partition(self, partition, key_fn):
+        data_parts = dict()
+        for data in self._datas:
+            parts = data.partition(partition, key_fn)
+            for k, v in parts.iteritems():
+                if k not in data_parts:
+                    data_parts[k] = []
+                data_parts[k].append(v)
+
+        mb_parts = dict()
+        for part_name in partition.get_part_names():
+            mb_parts[part_name] = MixedBatchData(data_parts[part_name], proportions=self._proportions)
+        return mb_parts
+
 register_feature_type(FeaturePathType)
 register_feature_type(FeaturePathVectorDictionaryType)
 register_feature_type(FeatureMatrixType)

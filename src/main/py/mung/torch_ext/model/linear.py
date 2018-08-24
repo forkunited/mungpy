@@ -1,8 +1,10 @@
 import mung.torch_ext.eval
+import numpy as np
 import torch
 import torch.nn as nn
 from torch.autograd import Variable
 
+PREDICTION_BATCH_SIZE=64
 
 class DataParameter:
     INPUT = "input"
@@ -75,6 +77,18 @@ class CombinedLoss(nn.Module):
             total_loss += self._weights[i]*self._losses[i](inputs[i], targets[i])
         return total_loss
 
+class DisjunctiveLoss(nn.Module):
+    def __init__(self, losses, loss_rescalings=None):
+        super(DisjunctiveLoss, self).__init__()
+        self._losses = losses
+        if loss_rescalings is None:
+            self._loss_rescalings = [1.0]*len(self._losses)
+        else:
+            self._loss_rescalings = loss_rescalings
+
+    def forward(self, input, target, loss_index):
+        return self._loss_rescalings[loss_index]*self._losses[loss_index](input, target)
+
 class LinearModel(nn.Module):
     def __init__(self, name, input_size, output_size=1, init_params=None, bias=False, continuous_output=False):
         super(LinearModel, self).__init__()
@@ -117,6 +131,10 @@ class LinearModel(nn.Module):
             input = input.cuda()
         return self(input)
 
+    def score(self, batch, data_parameters):
+        out = self.forward_batch(batch, data_parameters)
+        return out.squeeze(1).detach()
+
     def loss(self, batch, data_parameters, loss_criterion):
         output = batch[data_parameters[DataParameter.OUTPUT]]
         if self.on_gpu():
@@ -127,6 +145,27 @@ class LinearModel(nn.Module):
         if not self._continuous_output:
             target_out = target_out.long()
         return loss_criterion(model_out, target_out)
+
+    def predict_data(self, data, data_parameters, rand=False):
+        pred = np.array([])
+        for i in range(data.get_num_batches(PREDICTION_BATCH_SIZE)):
+            batch = data.get_batch(i, PREDICTION_BATCH_SIZE)
+            pred = np.concatenate((pred, self.predict(batch, data_parameters, rand=rand).numpy()), axis=0)
+        batch = data.get_final_batch(PREDICTION_BATCH_SIZE)
+        pred = np.concatenate((pred, self.predict(batch, data_parameters, rand=rand).numpy()), axis=0)
+        return pred
+
+    def score_data(self, data, data_parameters):
+        score = np.array([])
+        for i in range(data.get_num_batches(PREDICTION_BATCH_SIZE)):
+            batch = data.get_batch(i, PREDICTION_BATCH_SIZE)
+            score = np.concatenate((score, self.score(batch, data_parameters).numpy()), axis=0)
+        batch = data.get_final_batch(PREDICTION_BATCH_SIZE)
+        score = np.concatenate((score, self.score(batch, data_parameters).numpy()), axis=0)
+        return score
+
+    def predict(self, batch, data_parameters, rand=False):
+        raise NotImplementedError()
 
 class LinearRegression(LinearModel):
     def __init__(self, name, input_size, init_params=None, bias=False, std=1.0):
@@ -179,15 +218,15 @@ class OrdinalLogisticRegression(LinearModel):
         K = self._theta.size(0)
         return self._theta.unsqueeze(0).expand(B, K) - self._linear(input).squeeze().unsqueeze(1).expand(B, K)
 
-    def predict(self, batch, data_parameters, rand=False, include_score=False):
+    def predict(self, batch, data_parameters, rand=False):
         if rand:
             raise ValueError("Random predictions unsupported by OrdinalLogisticRegression")
 
         out = self.forward_batch(batch, data_parameters)
-        if include_score:
-            return torch.sum(out < 0, 1).long(), out[:,0].squeeze().detach()
-        else:
-            return torch.sum(out < 0, 1).long()
+        return torch.sum(out < 0, 1).long()
+
+    def score(self, batch, data_parameters):
+        return out[:,0].squeeze().detach()
 
     def default_loss(self, batch, data_parameters):
         return self.loss(batch, data_parameters, self._olloss)
@@ -280,71 +319,76 @@ class MultinomialLogisticRegression(LinearModel):
 
 
 class PairwiseOrdinalLogisticRegression(LinearModel):
-    def __init__(self, name, input_size, label_count, init_params=None, bias=False, alpha=0.5):
+    def __init__(self, name, input_size, label_count, init_params=None, bias=False, ordinal_rescaling=1.0):
         super(PairwiseOrdinalLogisticRegression, self).__init__(name, input_size, output_size=1, init_params=init_params, bias=bias)
         self._theta = nn.Parameter(torch.zeros(label_count-1))
         self._sigmoid = nn.Sigmoid()
-        self._alpha = alpha
-        self._loss = CombinedLoss(\
-            [LRLoss(size_average=False), OrdinalLogisticLoss(label_count), OrdinalLogisticLoss(label_count)],\
-            [1.0-alpha, 0.5*self._alpha, 0.5*self._alpha])
+        self._loss = DisjunctiveLoss([LRLoss(size_average=False), OrdinalLogisticLoss(label_count)], \
+                                     [1.0, ordinal_rescaling])
+
+    def _is_ordinal_batch(self, batch, data_parameters):
+        return not isinstance(batch[data_parameters[DataParameter.INPUT]], tuple)
 
     def forward_batch(self, batch, data_parameters):
         input = batch[data_parameters[DataParameter.INPUT]]
-        if isinstance(input, tuple):
-            if self.on_gpu():
-                input = input[0].cuda(), input[1].cuda()
-            input = Variable(input[0]), Variable(input[1])
-        else:
+        if self._is_ordinal_batch(batch, data_parameters):
             if self.on_gpu():
                 input = input.cuda()
             input = Variable(input)
+        else:
+            if self.on_gpu():
+                input = input[0].cuda(), input[1].cuda()
+            input = Variable(input[0]), Variable(input[1])
         return self(input)
 
     def forward(self, input):
-        K = self._theta.size(0)
-        if isinstance(input, tuple):
-            B = input[0].size(0)
-            out_pair = self._linear(input[0] - input[1])
-            out_ord0 = self._theta.unsqueeze(0).expand(B, K) - self._linear(input[0]).expand(B, K)
-            out_ord1 = self._theta.unsqueeze(0).expand(B, K) - self._linear(input[1]).expand(B, K)
-            return (out_pair, out_ord0, out_ord1)
-        else:
-            B = input.size(0)            
+        if not isinstance(input, tuple):
+            B = input.size(0)      
+            K = self._theta.size(0)      
             return self._theta.unsqueeze(0).expand(B, K) - self._linear(input).expand(B, K)
+        else:
+            return self._linear(input[0] - input[1])
 
     def loss(self, batch, data_parameters, loss_criterion):
-        output = batch[data_parameters[DataParameter.OUTPUT]]
-        ordinal = batch[data_parameters[DataParameter.ORDINAL]]
+        output = None
+        if self._is_ordinal_batch(batch, data_parameters):
+            output = batch[data_parameters[DataParameter.ORDINAL]]
+        else:
+            output = batch[data_parameters[DataParameter.OUTPUT]]
         if self.on_gpu():
             output = output.cuda()
-            ordinal = ordinal[0].cuda(), ordinal[1].cuda()
 
-        model_out = self.forward_batch(batch, data_parameters)
-        if isinstance(model_out, tuple):
-            model_out = (model_out[0].squeeze(), model_out[1].squeeze(), model_out[2].squeeze())
-        else:
-            raise ValueError("Cannot compute loss over singleton instance")
+        model_out = self.forward_batch(batch, data_parameters).squeeze()
         target_out = Variable(output).squeeze().long()
-        ordinal_out = Variable(ordinal[0]).squeeze().long(), Variable(ordinal[1]).squeeze().long()
-        return loss_criterion(model_out, (target_out, ordinal_out[0], ordinal_out[1]))
 
-    def predict(self, batch, data_parameters, rand=False, include_score=False):
+        if self._is_ordinal_batch(batch, data_parameters):
+            return loss_criterion(model_out, target_out, 1)
+        else:
+            return loss_criterion(model_out, target_out, 0)
+
+    def predict(self, batch, data_parameters, rand=False):
         if rand:
             raise ValueError("Random predictions unsupported by PairwiseOrdinalLogisticRegression")
 
         out = self.forward_batch(batch, data_parameters)
-        if isinstance(out, tuple): # FIXME Currently a hack to check whether predicting over pair or singleton
-            p = self._sigmoid(out[0])
-            if include_score:
-                return torch.bernoulli(p).squeeze(1), out[0][:].squeeze(1).detach()
-            else:
-                return torch.bernoulli(p).squeeze(1)
+        if self._is_ordinal_batch(batch, data_parameters):
+            return torch.sum(out < 0, 1).long()  GOOD
+            
+            #p = self._sigmoid(out)  CONFIDENCES...
+            #K = p.size(1)+1
+            #p = torch.cat((p, (1.0-p[:,K-2]).unsqueeze(1)), 1)
+            #p[:,1:(K-1)] = p[:,1:(K-1)] - p[:,0:(K-2)]
+            #return torch.argmax(p, dim=1)
         else:
-            if include_score:
-                return torch.sum(out < 0, 1).long(), out[:,0].squeeze(0).detach()
-            else:
-                return torch.sum(out < 0, 1).long()
+            p = self._sigmoid(out)
+            return torch.bernoulli(p).squeeze(1)
+
+    def score(self, batch, data_parameters):
+        out = self.forward_batch(batch, data_parameters)
+        if self._is_ordinal_batch(batch, data_parameters):
+            return -out[:,0].squeeze(0).detach()
+        else:
+            return out.squeeze(1).detach()
 
     def default_loss(self, batch, data_parameters):
         return self.loss(batch, data_parameters, self._loss)
