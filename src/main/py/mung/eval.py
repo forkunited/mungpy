@@ -67,8 +67,46 @@ class ClassificationReport(PredictionMetric):
         self._digits = digits
 
     def compute(self, y_true, y_pred):
-        return sklearn.metrics.classification_report(y_true.astype(int), y_pred.astype(int), 
-            self._labels, self._target_names, self._sample_weight, self._digits)
+        return ClassificationReportResult(sklearn.metrics.classification_report(y_true.astype(int), y_pred.astype(int), 
+            self._labels, self._target_names, self._sample_weight, self._digits))
+
+class ClassificationReportResult:
+    def __init__(self, result_str):
+        self._label_result = dict()
+        self._aggregate_result = dict()
+        self._parse_result_str(result_str)
+        self._result_str = result_str
+
+    def __str__(self):
+        return self._result_str
+
+    def _parse_result_str(self, result_str):
+        lines = result_str.split("\n")
+        for i, line in enumerate(lines):
+            line = line.strip().replace("avg / total", "avg/total")
+            if len(line) == 0 or i == 0:
+                continue
+            line_parts = [line_part.strip() for line_part in line.split()]
+            label, precision, recall, f1, support = line_parts
+            if label == "avg/total":
+                self._aggregate_result = { "precision" : float(precision), "recall" : float(recall), "f1" : float(f1), "support" : int(support) }
+            else:
+                self._label_result[label] = { "precision" : float(precision), "recall" : float(recall), "f1" : float(f1), "support" : int(support) }
+
+    def get_single_column_table(self):
+        row_labels = []
+        values = []
+
+        for label, label_results in self._label_result.iteritems():
+            for label_result_name, label_result_value in label_results.iteritems():
+                row_labels.append(label_result_name + "_" + label)
+                values.append([label_result_value])
+
+        for agg_result_name, agg_result_value in self._aggregate_result.iteritems():
+            row_labels.append(agg_result_name)
+            values.append([agg_result_value])
+
+        return Table(values, row_labels=row_labels)
 
 class ConfusionMatrix(PredictionMetric):
     def __init__(self, name, labels=None, sample_weight=None, target_names=None):
@@ -290,6 +328,9 @@ class FoldedCVResults:
         return self._fold_evaluations[i]
 
     def get_data_metric_results(self, data_name):
+        if data_name not in self._data_metrics:
+            return None
+
         prediction_metrics = self._data_metrics[data_name]["prediction_metrics"]
         score_metrics = self._data_metrics[data_name]["score_metrics"]
         target_parameter = self._data_metrics[data_name]["target_parameter"]
@@ -307,19 +348,58 @@ class FoldedCVResults:
         results = self.get_data_metric_results(data_name)
         results_str = ""
         for metric_name, metric_value in results.iteritems():
-            if isinstance(metric_value, str):
+            if isinstance(metric_value, str) or \
+                isinstance(metric_value, ClassificationReportResult) or \
+                isinstance(metric_value, Table):
                 results_str += "-------------" + metric_name + "-------------\n"
-                results_str += metric_value
+                results_str += str(metric_value)
                 results_str += "---------------------------------------------\n"
             else:
                 results_str += metric_name + "\t" + str(metric_value) + "\n"
         return results_str
+
+    def get_numerical_metric_results(self, heading=""):
+        column_labels = ["Data", "Metric", heading]
+        data_labels = []
+        metric_labels = []
+        metric_values = []
+        for data_name in self.get_data_names():
+            data_results = self.get_data_metric_results(data_name)
+            if data_results is None:
+                continue
+            for metric_name, metric_value in data_results.iteritems():
+                if isinstance(metric_value, Table):
+                    continue
+                elif isinstance(metric_value, ClassificationReportResult):
+                    table = metric_value.get_single_column_table()
+                    data_labels.extend([data_name]*len(table.get_row_labels()))
+                    metric_labels.extend([metric_name + "_" + row_label for row_label in table.get_row_labels()])
+                    metric_values.extend([x for y in table.get_values() for x in y]) # Flatten values
+                elif isinstance(metric_value, tuple):
+                    data_labels.append(data_name)
+                    metric_labels.append(metric_name)
+                    metric_values.append(metric_value[0])
+                else:
+                    data_labels.append(data_name)
+                    metric_labels.append(metric_name)
+                    metric_values.append(metric_value)
+        values = [[data_labels[i], metric_labels[i], metric_values[i]] for i in range(len(metric_labels))]
+        return Table(values, column_labels=column_labels)
 
 class Table:
     def __init__(self, values, row_labels=None, column_labels=None):
         self._values = values
         self._row_labels = row_labels
         self._column_labels = column_labels
+
+    def get_row_labels(self):
+        return self._row_labels
+
+    def get_column_labels(self):
+        return self._column_labels
+
+    def get_values(self):
+        return self._values
     
     def __str__(self):
         values = []
@@ -333,7 +413,10 @@ class Table:
 
         s = ''
         if self._column_labels is not None:
-            s += '\t'.join(['']+self._column_labels) + '\n'
+            column_labels = self._column_labels
+            if self._row_labels is not None:
+                column_labels = [''] + column_labels
+            s += '\t'.join(column_labels) + '\n'
         if self._row_labels is not None:
             for i, l in enumerate(self._row_labels):
                 s += '\t'.join([l]+[x for x in values[i]]) + '\n'

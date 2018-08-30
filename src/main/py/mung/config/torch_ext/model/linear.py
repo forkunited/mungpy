@@ -10,7 +10,7 @@ from mung.torch_ext.model.linear import DataParameter, MultinomialLogisticRegres
 #   name : [ID FOR MODEL]
 #   arch_type : [LinearRegression|LogisticRegression|MultinomialLogisticRegression|OrdinalLogisticRegression|OrdisticRegression|PairwiseOrdinalLogisticRegression]
 #   (MultinomialLogisticRegression|OrdinalLogisticRegression|OrdisticRegression|PairwiseOrdinalLogisticRegression) label_count : [NUMBER OF OUTPUT CLASSES]
-#   (Optional for PairwiseOrdinalLogisticRegression) alpha : [WEIGHT OF ORDINAL LOSS RELATIVE TO PAIRWISE RANKING]
+#   (Optional for PairwiseOrdinalLogisticRegression) confidence_ordinals : [INDICATOR OF WHETHER TO PREDICT ORDINALS BASED ON CONFIDENCES]
 #   bias : [INDICATOR OF WHETHER OR NOT TO INCLUDE BIAS TERM]
 # }
 def load_linear_model(config, D, gpu=False):
@@ -35,8 +35,11 @@ def load_linear_model(config, D, gpu=False):
         ordinal_rescaling = 1.0
         if "ordinal_rescaling" in config:
             ordinal_rescaling = float(config["ordinal_rescaling"])
+        confidence_ordinals = False
+        if "confidence_ordinals" in config:
+            confidence_ordinals = bool(int(config["confidence_ordinals"]))
         label_count = config["label_count"]
-        model = PairwiseOrdinalLogisticRegression(name, input_size, label_count, bias=bias, ordinal_rescaling=ordinal_rescaling)
+        model = PairwiseOrdinalLogisticRegression(name, input_size, label_count, bias=bias, ordinal_rescaling=ordinal_rescaling, confidence_ordinals=confidence_ordinals)
     else: # LinearRegression
         model = LinearRegression(name, input_size, bias=bias)
     if gpu:

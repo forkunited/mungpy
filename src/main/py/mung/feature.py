@@ -105,6 +105,10 @@ class FeatureType(object):
     def get_token_count(self):
         return self.get_size()
 
+    def save(self, file_path):
+        with open(file_path, 'w') as fp:
+            json.dump(self.to_dict(), fp)
+
     @abc.abstractmethod
     def get_name(self):
         """ Returns the name of the feature type """
@@ -138,8 +142,8 @@ class FeatureType(object):
         """ End initializing the feature """
 
     @abc.abstractmethod
-    def save(self, file_path):
-        """ Save a representation of the feature to file """
+    def to_dict(self):
+        """ Gives a dictionary representing the feature type """
 
 
 class FeatureSequence(object):
@@ -233,7 +237,7 @@ class FeatureMatrixType(FeatureType):
     def __eq__(self, feature_type):
         if not isinstance(feature_type, FeatureMatrixType):
             return False
-        if self._name != feature_type.name:
+        if self._name != feature_type._name:
             return False
         return True
 
@@ -246,7 +250,7 @@ class FeatureMatrixType(FeatureType):
     def init_end(self):
         pass
 
-    def save(self, file_path):
+    def to_dict(self):
         obj = dict()
         obj["type"] = "FeatureMatrixType"
         obj["name"] = self._name
@@ -256,8 +260,7 @@ class FeatureMatrixType(FeatureType):
         if self._index is not None:
             obj["index"] = self._index
 
-        with open(file_path, 'w') as fp:
-            json.dump(obj, fp)
+        return obj
 
     @staticmethod
     def load(file_path):
@@ -300,7 +303,7 @@ class FeatureMatrixSequence(FeatureSequence):
     def __eq__(self, feature_seq):
         if not isinstance(feature_seq, FeatureMatrixSequence):
             return False
-        if self._name != feature_seq.name:
+        if self._name != feature_seq._name:
             return False
         return True
 
@@ -382,7 +385,7 @@ class FeaturePathToken(FeatureToken):
         pass
 
 class FeaturePathType(FeatureType):
-    def __init__(self, name, paths, min_occur=1, no_init=False, value_type=ValueType.ENUMERABLE_ONE_HOT, value_fn=None, seq_index=None, vocab=None, token_fn=lambda x : x):
+    def __init__(self, name, paths, fixed_path_values=None, min_occur=1, no_init=False, value_type=ValueType.ENUMERABLE_ONE_HOT, value_fn=None, seq_index=None, vocab=None, token_fn=lambda x : x):
         FeatureType.__init__(self)
         self._name = name
         self._paths = paths
@@ -395,6 +398,7 @@ class FeaturePathType(FeatureType):
 
         self._counter = None
         self._vocab = vocab
+        self._fixed_path_values = fixed_path_values
 
     def get_datum_length(self, datum):
         if self._seq_index is None:
@@ -514,7 +518,7 @@ class FeaturePathType(FeatureType):
     def __eq__(self, feature_type):
         if not isinstance(feature_type, FeaturePathType):
             return False
-        if self._name != feature_type.name:
+        if self._name != feature_type._name:
             return False
         return True
 
@@ -548,6 +552,19 @@ class FeaturePathType(FeatureType):
     def init_end(self):
         if self._no_init:
             return
+
+        if self._fixed_path_values is not None:
+            self._vocab = bidict()
+            index = 0
+            for path, values in self._fixed_path_values.iteritems():
+                for value in values:
+                    path_value = path + "_0_" + self._token_fn(value)
+                    if path_value not in self._vocab:
+                        self._vocab[path_value] = index
+                        index += 1
+            self._counter = None
+            return
+        
         vocab_list = []
         for key in self._counter:
             if self._counter[key] >= self._min_occur:
@@ -587,8 +604,8 @@ class FeaturePathType(FeatureType):
         if self._vocab is None:
             self._vocab = bidict()
 
+        index = 0
         if self._seq_index is not None and self._value_type != ValueType.SCALAR:
-            index = 0
             for path in self._paths:
                 self._vocab[path + "_" + self._token_fn(Symbol.SEQ_UNC)] = index*4 + Symbol.index(Symbol.SEQ_UNC)
                 self._vocab[path + "_" + self._token_fn(Symbol.SEQ_START)] = index*4 + Symbol.index(Symbol.SEQ_START)
@@ -602,7 +619,6 @@ class FeaturePathType(FeatureType):
                     self._vocab[v] = index
                     index += 1
         else:
-            index = 0
             for v in vocab_list:
                 if v not in self._vocab:
                     self._vocab[v] = index
@@ -610,7 +626,7 @@ class FeaturePathType(FeatureType):
 
         self._counter = None
 
-    def save(self, file_path):
+    def to_dict(self):
         obj = dict()
         obj["type"] = "FeaturePathType"
         obj["name"] = self._name
@@ -627,8 +643,11 @@ class FeaturePathType(FeatureType):
         if self._vocab is not None:
             obj["vocab"] = dict(self._vocab)
 
+        return obj
+
+    def save(self, file_path):
         with open(file_path, 'w') as fp:
-            pickle.dump(obj, fp)
+            pickle.dump(self.to_dict(), fp)
 
     @staticmethod
     def load(file_path):
@@ -694,7 +713,7 @@ class FeaturePathSequence(FeatureSequence):
     def __eq__(self, feature_seq):
         if not isinstance(feature_seq, FeaturePathSequence):
             return False
-        if self._name != feature_seq.name:
+        if self._name != feature_seq._name:
             return False
         return True
 
@@ -781,6 +800,9 @@ class FeaturePathVectorDictionaryType(FeaturePathType):
         self._vector_fn = vector_fn
         self._internalize_dict = internalize_dict
 
+    def __eq__(self, feature_type):
+        return isinstance(feature_type, FeaturePathVectorDictionaryType) and self._name == feature_type._name
+
     def _value_fn(self, path_to_values):
         mapping = []
         for path in path_to_values:
@@ -801,8 +823,8 @@ class FeaturePathVectorDictionaryType(FeaturePathType):
                 for j in range(len(vec)):
                     mapping.append((path + "_" + str(i) + "_" + str(j), vec[j]))
         return mapping
-    
-    def save(self, file_path):
+
+    def to_dict(self):
         # Same as FeaturePathType... should probably be changed if FeaturePathType changes
         # Also, should eventually FIXME to remove the redundancy
         obj = dict()
@@ -826,8 +848,11 @@ class FeaturePathVectorDictionaryType(FeaturePathType):
         if self._vector_fn is not None:
             obj["vector_fn"] = pickle.dumps(self._vector_fn)
 
+        return obj
+
+    def save(self, file_path):
         with open(file_path, 'w') as fp:
-            pickle.dump(obj, fp)
+            pickle.dump(self.to_dict(), fp)
 
     @staticmethod
     def load(file_path):
@@ -872,6 +897,114 @@ class FeaturePathVectorDictionaryType(FeaturePathType):
 
         return FeaturePathVectorDictionaryType(name, paths, vector_dict, token_fn=token_fn, vector_fn=vector_fn, vocab=vocab, internalize_dict=internalize_dict)
 
+class FeatureProductToken(FeatureToken):
+    def __init__(self, name, token_0, token_1):
+        FeatureToken.__init__(self)
+        self._name = name
+        self._token_0 = token_0
+        self._token_1 = token_1
+
+    def __str__(self):
+        return self._name + "_" + str(self._token_0) + "_" + str(self._token_1)
+
+    def get_name(self):
+        return self._name
+
+    def init_start(self):
+        pass
+
+    def init_datum(self, datum):
+        pass
+
+    def init_end(self):
+        pass
+
+class FeatureProductType(FeatureType):
+    def __init__(self, name, feature_0, feature_1, no_init=False):
+        FeatureType.__init__(self)
+        self._name = name
+        self._no_init = no_init
+        self._feature_0 = feature_0
+        self._feature_1 = feature_1
+
+    def get_name(self):
+        return self._name
+
+    def get_size(self):
+        return self._feature_0.get_size()*self._feature_1.get_size()
+
+    def compute(self, datum, vec, start_index):
+        vec_0 = np.zeros(shape=self._feature_0.get_size())
+        vec_1 = np.zeros(shape=self._feature_1.get_size())
+
+        self._feature_0.compute(datum, vec_0, 0)
+        self._feature_1.compute(datum, vec_1, 0)
+
+        for i in range(self._feature_0.get_size()):
+            for j in range(self._feature_1.get_size()):
+                index = i*self._feature_1.get_size() + j
+                vec[start_index + index] = vec_0[i]*vec_1[j]
+
+    def get_token(self, index):
+        index_0 = index / self._feature_1.get_size()
+        index_1 = index % self._feature_1.get_size()
+        return FeatureProductToken(self._name, self._feature_0.get_token(index_0), self._feature_1.get_token(index_1))
+
+    def __eq__(self, feature_type):
+        return isinstance(feature_type, FeatureProductType) and self._name == feature_type._name
+
+    def init_start(self):
+        if self._no_init:
+            return
+        self._feature_0.init_start()
+        self._feature_1.init_start()
+
+    def init_datum(self, datum):
+        if self._no_init:
+            return
+        self._feature_0.init_datum(datum)
+        self._feature_1.init_datum(datum)
+
+    def init_end(self):
+        if self._no_init:
+            return
+        self._feature_0.init_end()
+        self._feature_1.init_end()
+
+    def to_dict(self):
+        obj = dict()
+        obj["type"] = "FeatureProductType"
+        obj["name"] = self._name
+        obj["feature_0"] = self._feature_0.to_dict()
+        obj["feature_1"] = self._feature_1.to_dict()
+        obj["no_init"] = self._no_init
+        return obj
+
+    def save(self, file_path):
+        with open(file_path, 'w') as fp:
+            pickle.dump(self.to_dict(), fp)
+
+    @staticmethod
+    def from_dict(obj):
+        feature_0 = None
+        if obj["feature_0"]["type"] in FEATURE_TYPES:
+            feature_0 = FEATURE_TYPES[obj["feature_0"]["type"]].from_dict(obj["feature_0"])
+        else:
+            raise ValueError(obj["feature_0"]["type"] + " feature type not registered")
+
+        feature_1 = None
+        if obj["feature_1"]["type"] in FEATURE_TYPES:
+            feature_1 = FEATURE_TYPES[obj["feature_1"]["type"]].from_dict(obj["feature_1"])
+        else:
+            raise ValueError(obj["feature_1"]["type"] + " feature type not registered")
+
+        return FeatureProductType(obj["name"], feature_0, feature_1, no_init=obj["no_init"])
+
+    @staticmethod
+    def load(file_path):
+        with open(file_path, 'r') as fp:
+            obj = pickle.load(fp)
+            return FeatureProductType.from_dict(obj)
 
 class FeatureSet:
     def __init__(self, feature_types=[]):
@@ -2083,7 +2216,7 @@ class MixedBatchData:
 
     def get_random_batch(self, size):
         data_index = np.random.choice(len(self._datas), size=1, p=self._proportions)[0]
-
+        
         return self._datas[data_index].get_random_batch(size)
 
     def partition(self, partition, key_fn):
@@ -2103,5 +2236,6 @@ class MixedBatchData:
 register_feature_type(FeaturePathType)
 register_feature_type(FeaturePathVectorDictionaryType)
 register_feature_type(FeatureMatrixType)
+register_feature_type(FeatureProductType)
 register_feature_seq_type(FeatureMatrixSequence)
 register_feature_seq_type(FeaturePathSequence)
