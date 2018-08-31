@@ -201,6 +201,13 @@ class FoldedCV:
         models = []
         data_parameters = []
         datas = dict()
+
+        for key, d in self._data.iteritems():
+            if key not in self._partitions:
+                if key not in datas:
+                    datas[key] = []
+                datas[key].append(d)
+        
         for i in range(k): # Iterate over folds
             partitions_i = self._make_fold_partition(part_names, i)
             datas_i = dict()
@@ -208,6 +215,9 @@ class FoldedCV:
 
             # Construct train/dev/test for current fold (i)
             for key, d in self._data.iteritems():
+                if key not in partitions_i:
+                    continue
+
                 partition = partitions_i[key]
                 d_parts = d.partition(partition, lambda d : d.get_id())
 
@@ -282,7 +292,7 @@ class FoldedCVResults:
     def _predict_data(self, data_name):
         y_pred = np.array([])
         data = self._datas[data_name]
-        for i in range(self.get_fold_count()):
+        for i in range(len(data)):
             y_pred_i = self._fold_models[i].predict_data(data[i], self._data_parameters[i], rand=False)
             y_pred = np.concatenate((y_pred,y_pred_i))
         return y_pred
@@ -290,7 +300,7 @@ class FoldedCVResults:
     def _view_data(self, data_name, target_parameter):
         target = np.array([])
         data = self._datas[data_name]
-        for i in range(self.get_fold_count()):
+        for i in range(len(data)):
             target_i = data[i].get_batch(0,data[i].get_size())[self._data_parameters[i][target_parameter]].squeeze().numpy()
             target = np.concatenate((target, target_i))
         return target
@@ -298,10 +308,21 @@ class FoldedCVResults:
     def _score_data(self, data_name):
         y_score = np.array([])
         data = self._datas[data_name]
-        for i in range(self.get_fold_count()):
+        for i in range(len(data)):
             y_score_i = self._fold_models[i].score_data(data[i], self._data_parameters[i])
             y_score = np.concatenate((y_score,y_score_i))
         return y_score
+
+    def _p_data(self, data_name):
+        y_p = None
+        data = self._datas[data_name]
+        for i in range(len(data)):
+            y_p_i = self._fold_models[i].p_data(data[i], self._data_parameters[i])
+            if y_p is None:
+                y_p = y_p_i
+            else:
+                y_p = np.concatenate((y_p,y_p_i))
+        return y_p
 
     def get_data_parameter(self, fold_index=0):
         return self._data_parameters[fold_index]
@@ -316,13 +337,19 @@ class FoldedCVResults:
         merged_data = self._merge_data(data_name)
         y_pred = self._predict_data(data_name)
         y_score = self._score_data(data_name)
+        y_p = self._p_data(data_name)
+
         table_rows = []
         for i in range(merged_data.get_size()):
-            table_rows.append([datum_str_fn(merged_data[i]), \
+            row = [datum_str_fn(merged_data[i]), \
                                datum_true_fn(merged_data[i]), \
                                pred_str_fn(y_pred[i]), \
-                               y_score[i]])
-        return Table(table_rows, column_labels=[datum_type_name, "y_true", "y_pred", "score"])
+                               y_score[i]]
+            row.extend(y_p[i].tolist())
+            table_rows.append(row)
+        labels = [datum_type_name, "y_true", "y_pred", "score"]
+        labels.extend(["p_" + str(i) for i in range(y_p.shape[1])])
+        return Table(table_rows, column_labels=labels)
             
     def get_fold_evaluation_results(self, i):
         return self._fold_evaluations[i]

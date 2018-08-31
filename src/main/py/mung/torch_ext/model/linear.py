@@ -24,7 +24,7 @@ class DataParameter:
         elif key == DataParameter.ORDINAL:
             return self._ordinal
         else:
-            raise ValueError("Invalid data parameter: " + str(key))
+            return key #raise ValueError("Invalid data parameter: " + str(key))
     
     @staticmethod
     def make(input="input", output="output", ordinal="ordinal"):
@@ -166,7 +166,23 @@ class LinearModel(nn.Module):
             score = np.concatenate((score, self.score(batch, data_parameters).numpy()), axis=0)
         return score
 
+    def p_data(self, data, data_parameters):
+        p = None
+        for i in range(data.get_num_batches(PREDICTION_BATCH_SIZE)):
+            batch = data.get_batch(i, PREDICTION_BATCH_SIZE)
+            if p is None:
+                p = self.p(batch, data_parameters).numpy()
+            else:
+                p = np.concatenate((p, self.p(batch, data_parameters).numpy()), axis=0)
+        batch = data.get_final_batch(PREDICTION_BATCH_SIZE)
+        if batch is not None:
+            p = np.concatenate((p, self.p(batch, data_parameters).numpy()), axis=0)
+        return p
+
     def predict(self, batch, data_parameters, rand=False):
+        raise NotImplementedError()
+
+    def p(self, batch, data_parameters):
         raise NotImplementedError()
 
 class LinearRegression(LinearModel):
@@ -321,13 +337,17 @@ class MultinomialLogisticRegression(LinearModel):
 
 
 class PairwiseOrdinalLogisticRegression(LinearModel):
-    def __init__(self, name, input_size, label_count, init_params=None, bias=False, ordinal_rescaling=1.0, confidence_ordinals=False):
+    def __init__(self, name, input_size, label_count, init_params=None, bias=False, ordinal_rescaling=1.0, confidence_ordinals=False, constant_scalar=True):
         super(PairwiseOrdinalLogisticRegression, self).__init__(name, input_size, output_size=1, init_params=init_params, bias=bias)
         self._theta = nn.Parameter(torch.zeros(label_count-1))
         self._sigmoid = nn.Sigmoid()
         self._loss = DisjunctiveLoss([LRLoss(size_average=False), OrdinalLogisticLoss(label_count)], \
                                      [1.0, ordinal_rescaling])
         self._confidence_ordinals = confidence_ordinals
+        self._constant_scalar = constant_scalar
+
+        if not constant_scalar:
+            self._s = nn.Parameter(torch.ones(label_count-1))
 
     def _is_ordinal_batch(self, batch, data_parameters):
         return not isinstance(batch[data_parameters[DataParameter.INPUT]], tuple)
@@ -347,8 +367,11 @@ class PairwiseOrdinalLogisticRegression(LinearModel):
     def forward(self, input):
         if not isinstance(input, tuple):
             B = input.size(0)      
-            K = self._theta.size(0)      
-            return self._theta.unsqueeze(0).expand(B, K) - self._linear(input).expand(B, K)
+            K = self._theta.size(0)
+            if self._constant_scalar:
+                return self._theta.unsqueeze(0).expand(B, K) - self._linear(input).expand(B, K)
+            else:
+                return (self._theta.unsqueeze(0).expand(B, K) - self._linear(input).expand(B, K))/self._s.unsqueeze(0).expand(B, K)
         else:
             return self._linear(input[0] - input[1])
 
@@ -387,6 +410,14 @@ class PairwiseOrdinalLogisticRegression(LinearModel):
         else:
             p = self._sigmoid(out)
             return torch.bernoulli(p).squeeze(1)
+
+    def p(self, batch, data_parameters):
+        out = self.forward_batch(batch, data_parameters)
+        pr = self._sigmoid(out)
+        K = pr.size(1)+1
+        pr = torch.cat((pr, (1.0-pr[:,K-2]).unsqueeze(1)), 1)
+        pr[:,1:(K-1)] = pr[:,1:(K-1)] - pr[:,0:(K-2)]
+        return pr.detach()
 
     def score(self, batch, data_parameters):
         out = self.forward_batch(batch, data_parameters)

@@ -93,8 +93,4 @@ def load_mvdata(config, ignore_paired_data=True):
                             d_match = (d_match and d.get(d_key) < d_value)
                         return d_match
                     S[item["name"]] = D_cur.filter(f)
-
-    if D_paired is not None:
-        return D, S, D_paired
-    else:
-        return D, S
+    return D, S, D_paired

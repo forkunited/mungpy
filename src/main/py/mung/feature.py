@@ -487,8 +487,10 @@ class FeaturePathType(FeatureType):
                 key = path_value[0] + "_" + path_value[1]
                 if key in self._vocab:
                     index = self._vocab[key]
-                else:
+                elif path_value[0] + "_" + self._token_fn(Symbol.SEQ_UNC) in self._vocab:
                     index = self._vocab[path_value[0] + "_" + self._token_fn(Symbol.SEQ_UNC)]
+                else:
+                    continue
 
                 if self._value_type == ValueType.ENUMERABLE_INDEX:
                     vec[start_index] = index

@@ -11,6 +11,7 @@ from mung.torch_ext.model.linear import DataParameter, MultinomialLogisticRegres
 #   arch_type : [LinearRegression|LogisticRegression|MultinomialLogisticRegression|OrdinalLogisticRegression|OrdisticRegression|PairwiseOrdinalLogisticRegression]
 #   (MultinomialLogisticRegression|OrdinalLogisticRegression|OrdisticRegression|PairwiseOrdinalLogisticRegression) label_count : [NUMBER OF OUTPUT CLASSES]
 #   (Optional for PairwiseOrdinalLogisticRegression) confidence_ordinals : [INDICATOR OF WHETHER TO PREDICT ORDINALS BASED ON CONFIDENCES]
+#   (Optional for PairwiseOrdinalLogisticRegression) constant_scalar : [INDICATOR OF WHETHER s PARAMETER IS CONSTANT ACROSS THRESHOLDS]
 #   bias : [INDICATOR OF WHETHER OR NOT TO INCLUDE BIAS TERM]
 # }
 def load_linear_model(config, D, gpu=False):
@@ -38,8 +39,11 @@ def load_linear_model(config, D, gpu=False):
         confidence_ordinals = False
         if "confidence_ordinals" in config:
             confidence_ordinals = bool(int(config["confidence_ordinals"]))
+        constant_scalar = True
+        if "constant_scalar" in config:
+            constant_scalar = bool(int(config["constant_scalar"]))
         label_count = config["label_count"]
-        model = PairwiseOrdinalLogisticRegression(name, input_size, label_count, bias=bias, ordinal_rescaling=ordinal_rescaling, confidence_ordinals=confidence_ordinals)
+        model = PairwiseOrdinalLogisticRegression(name, input_size, label_count, bias=bias, ordinal_rescaling=ordinal_rescaling, confidence_ordinals=confidence_ordinals, constant_scalar=constant_scalar)
     else: # LinearRegression
         model = LinearRegression(name, input_size, bias=bias)
     if gpu:
