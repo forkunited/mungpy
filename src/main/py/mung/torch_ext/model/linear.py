@@ -4,8 +4,6 @@ import torch
 import torch.nn as nn
 from torch.autograd import Variable
 
-PREDICTION_BATCH_SIZE=64
-
 class DataParameter:
     INPUT = "input"
     OUTPUT = "output"
@@ -146,35 +144,38 @@ class LinearModel(nn.Module):
             target_out = target_out.long()
         return loss_criterion(model_out, target_out)
 
-    def predict_data(self, data, data_parameters, rand=False):
+    def predict_data(self, data, data_parameters, rand=False, prediction_batch_size=64):
         pred = np.array([])
-        for i in range(data.get_num_batches(PREDICTION_BATCH_SIZE)):
-            batch = data.get_batch(i, PREDICTION_BATCH_SIZE)
+        prediction_batch_size = min(prediction_batch_size, data.get_size())
+        for i in range(data.get_num_batches(prediction_batch_size)):
+            batch = data.get_batch(i, prediction_batch_size)
             pred = np.concatenate((pred, self.predict(batch, data_parameters, rand=rand).numpy()), axis=0)
-        batch = data.get_final_batch(PREDICTION_BATCH_SIZE)
+        batch = data.get_final_batch(prediction_batch_size)
         if batch is not None:
             pred = np.concatenate((pred, self.predict(batch, data_parameters, rand=rand).numpy()), axis=0)
         return pred
 
-    def score_data(self, data, data_parameters):
+    def score_data(self, data, data_parameters, prediction_batch_size=64):
         score = np.array([])
-        for i in range(data.get_num_batches(PREDICTION_BATCH_SIZE)):
-            batch = data.get_batch(i, PREDICTION_BATCH_SIZE)
+        prediction_batch_size = min(prediction_batch_size, data.get_size())
+        for i in range(data.get_num_batches(prediction_batch_size)):
+            batch = data.get_batch(i, prediction_batch_size)
             score = np.concatenate((score, self.score(batch, data_parameters).numpy()), axis=0)
-        batch = data.get_final_batch(PREDICTION_BATCH_SIZE)
+        batch = data.get_final_batch(prediction_batch_size)
         if batch is not None:
             score = np.concatenate((score, self.score(batch, data_parameters).numpy()), axis=0)
         return score
 
-    def p_data(self, data, data_parameters):
+    def p_data(self, data, data_parameters, prediction_batch_size=64):
         p = None
-        for i in range(data.get_num_batches(PREDICTION_BATCH_SIZE)):
-            batch = data.get_batch(i, PREDICTION_BATCH_SIZE)
+        prediction_batch_size = min(prediction_batch_size, data.get_size())
+        for i in range(data.get_num_batches(prediction_batch_size)):
+            batch = data.get_batch(i, prediction_batch_size)
             if p is None:
                 p = self.p(batch, data_parameters).numpy()
             else:
                 p = np.concatenate((p, self.p(batch, data_parameters).numpy()), axis=0)
-        batch = data.get_final_batch(PREDICTION_BATCH_SIZE)
+        batch = data.get_final_batch(prediction_batch_size)
         if batch is not None:
             p = np.concatenate((p, self.p(batch, data_parameters).numpy()), axis=0)
         return p
@@ -422,7 +423,7 @@ class PairwiseOrdinalLogisticRegression(LinearModel):
     def score(self, batch, data_parameters):
         out = self.forward_batch(batch, data_parameters)
         if self._is_ordinal_batch(batch, data_parameters):
-            return -out[:,0].squeeze(0).detach()
+            return -out[:,0].detach() #.squeeze(0).detach()
         else:
             return out.squeeze(1).detach()
 

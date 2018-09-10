@@ -173,6 +173,74 @@ class Accuracy(PredictionMetric):
     def compute(self, y_true, y_pred):
         return np.sum((np.abs(y_true - y_pred) <= self._tolerance).astype(np.float))/y_pred.shape[0]
 
+class TrainTestCV:
+    def __init__(self, data, partitions, load_model_fn, train_fn, load_evaluation_fn, dev_part, test_part):
+        if isinstance(data, dict):
+            self._data = data
+            self._partitions = partitions
+        else:
+            self._data = dict()
+            self._partitions = dict()
+            self._data[""] = data
+            self._partitions[""] = partitions
+        
+        self._load_model_fn = load_model_fn
+        self._train_fn = train_fn
+        self._load_evaluation_fn = load_evaluation_fn
+        self._dev_part = dev_part
+        self._test_part = test_part
+
+    def run(self, model_config, train_evaluation_config, dev_evaluation_config, \
+            trainer_config, data_metrics, logger):
+        cv_partitions = self._make_cv_partitions()
+
+        # Construct train/dev/test
+        datas = dict()
+        test_datas = dict()
+        D_params = None
+        for key, d in self._data.iteritems(): # Construct train/dev/test
+            if key not in cv_partitions:
+                continue
+
+            partition = cv_partitions[key]
+            d_parts = d.partition(partition, lambda d : d.get_id())
+            
+            suffix = ""
+            if len(key) > 0:
+                suffix = "_" + key
+
+            datas["train" + suffix] = d_parts["train"]
+            datas["dev" + suffix] = d_parts["dev"]
+            datas["test" + suffix] = d_parts["test"]
+
+            D_params = d_parts["train"]
+
+            if key not in test_datas:
+                test_datas[key] = []
+            test_datas[key].append(d_parts["test"])
+
+        # Load model and evaluations
+        data_parameter, model = self._load_model_fn(model_config, D_params)
+        train_evaluations = self._load_evaluation_fn(train_evaluation_config, datas, data_parameter)
+        dev_evaluations = self._load_evaluation_fn(dev_evaluation_config, datas, data_parameter)
+
+        # Train and evaluate
+        _, best_model, _ = self._train_fn(trainer_config, data_parameter, \
+            model.get_loss_criterion(), logger, train_evaluations, model, datas)
+        dev_results = Evaluation.run_all(dev_evaluations, best_model, flatten_result=False)
+        
+        return FoldedCVResults([best_model], [data_parameter], [dev_results], test_datas, data_metrics)
+
+    def _make_cv_partitions(self):
+        cv_partitions = dict()
+        for k, p in self._partitions.iteritems():
+            train_parts = set(p.get_part_names()) - set([self._dev_part, self._test_part])
+            cv_partitions[k] = p.copy() \
+                .merge_parts(list(train_parts), "train") \
+                .merge_parts([self._dev_part], "dev") \
+                .merge_parts([self._test_part], "test")
+        return cv_partitions
+
 class FoldedCV:
     # data : MultiviewDataSet or (key -> MultiviewDataSet)
     # partitions : Partition or (key -> Partition) (each partition should have the same set of part names)
@@ -326,6 +394,9 @@ class FoldedCVResults:
 
     def get_data_parameter(self, fold_index=0):
         return self._data_parameters[fold_index]
+
+    def get_model(self, fold_index=0):
+        return self._fold_models[fold_index]
 
     def get_data_names(self):
         return self._datas.keys()

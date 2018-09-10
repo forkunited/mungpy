@@ -1,5 +1,7 @@
 import abc
 import mung.data
+from mung.data import DatumReference, DataSet, Datum
+from mung.feature import DataFeatureMatrix, MultiviewDataSet
 
 TYPE_TOKENS = "NLPTokens"
 TYPE_POS = "NLPPoS"
@@ -10,10 +12,8 @@ TYPE_SENTENCES = "NLPSentences"
 class Annotator(object):
     __metaclass__ = abc.ABCMeta
 
-    def __init__(self, target_path, target_key, store_key):
-        self._target_path = target_path
-        self._target_key = target_key
-        self._store_key = store_key
+    def __init__(self):
+        return
 
     def annotate_directory(self, input_dir, output_dir=None, id_key="id", batch=1000):
         if output_dir is None:
@@ -43,6 +43,59 @@ class Annotator(object):
     def _annotate_in_place(self, datum):
         """ Annotate a given datum """
 
+class ModelAnnotator(Annotator):
+    def __init__(self, annotator_name, model, features, transform_datum_fn, store_key, target_path=None, label_fn=None, model_input_name="input"):
+        Annotator.__init__(self)
+        self._annotator_name = annotator_name
+        self._model = model
+        self._features = features
+
+        self._transform_datum_fn = transform_datum_fn
+        self._store_key = store_key
+        self._target_path = target_path
+
+        self._label_fn = label_fn
+        self._model_input_name = model_input_name
+        self._data_parameter = { model_input_name : model_input_name } # FIXME Refactor this later
+        
+    def __str__(self):
+        return self._annotator_name
+
+    def _annotate_in_place(self, datum):
+        targets = None
+        if self._target_path is not None:
+            targets = datum.get(self._target_path, first=False, include_paths=True)
+        else:
+            targets = [(".", datum.to_dict())]
+        
+        for (target_path, target) in targets:
+            transformed_target = self._transform_datum_fn(target)
+            transformed_target["id"] = datum.get_id() + " _" + target_path
+            transformed_datums = [Datum(properties=transformed_target)]
+
+            annos = self._annotate_for_datums(datum, transformed_datums, target_path)
+            obj = annos.to_dict()
+            datum.set(self._store_key, obj, path=target_path)
+        return datum
+
+    def _annotate_for_datums(self, source_datum, datums, target_path):
+        annotated_ref = DatumReference(source_datum, target_path)
+
+        # FIXME This is grotesque.  Batch data later
+        D = DataSet(data=datums) 
+        DF = DataFeatureMatrix(D, self._features, init_features=False)
+        M = MultiviewDataSet(data=D, dfmats={ self._model_input_name : DF })
+
+        anno_obj = dict()
+        anno_obj["prediction"] = self._model.predict_data(M, self._data_parameter).item()
+        anno_obj["score"] = self._model.score_data(M, self._data_parameter).item()
+        anno_obj["p"] = self._model.p_data(M, self._data_parameter)[0].tolist()
+
+        if self._label_fn is not None:
+            anno_obj["label"] = self._label_fn(anno_obj["prediction"])
+
+        return AnnotationGeneric(annotated_ref, self._annotator_name, anno_obj)
+
 
 class Annotation(object):
     __metaclass__ = abc.ABCMeta
@@ -57,6 +110,31 @@ class Annotation(object):
     def get_type(self):
         """ Get type of the annotation """
 
+class AnnotationGeneric(Annotation):
+    def __init__(self, target_ref, anno_type, anno_dict):
+        Annotation.__init__(self, target_ref)
+        self._anno_dict = anno_dict
+        self._anno_type = anno_type
+
+    def get_type(self):
+        return self._anno_type
+
+    def to_dict(self):
+        obj = dict()
+        obj["type"] = self._anno_type
+        obj["target"] = self._target_ref.get_path()
+        obj["anno"] = self._anno_dict
+        return obj
+
+    @staticmethod
+    def from_dict(datum, obj):
+        if not isinstance(obj, dict) or "type" not in obj:
+            return None
+        
+        target_ref = mung.data.DatumReference(datum, obj["target"])
+        anno_type = obj["type"]
+        anno_dict = obj["anno"]
+        return AnnotationGeneric(target_ref, anno_type, anno_dict)
 
 class Tokens(Annotation):
     def __init__(self, target_ref, spans=[]):

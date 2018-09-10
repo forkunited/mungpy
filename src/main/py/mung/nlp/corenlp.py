@@ -77,9 +77,12 @@ class CoreNLPAnnotations:
 
 class CoreNLPAnnotator(Annotator):
     def __init__(self, target_path, target_key, store_key):
-        Annotator.__init__(self, target_path, target_key, store_key)
+        Annotator.__init__(self)
         self._nlp = StanfordCoreNLP('http://localhost:{}'.format(STANFORD_NLP_PORT))
         self._printable = set(string.printable)
+        self._target_path = target_path
+        self._target_key = target_key
+        self._store_key = store_key
 
     def __str__(self):
         return "corenlp-3.6+"

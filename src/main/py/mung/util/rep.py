@@ -9,12 +9,21 @@ class StoredVectorDictionary:
     def __init__(self, vecs=None, file_path=None, 
                  storage_format=StorageFormat.VEC, delimiter=" ", 
                  header_lines=1, transform_fn=None, normalized=False):
+        self._vecs = vecs
+        self._file_path = file_path
+        self._storage_format = storage_format
+        self._delimiter = delimiter
+        self._header_lines = header_lines
+        self._transform_fn = transform_fn
+        self._normalized = normalized
+
         if vecs is not None:
             self._vecs = vecs
         else:
             self._vecs = dict()
             if file_path is not None:
                 self._load(file_path, storage_format, delimiter, header_lines, transform_fn, normalized)
+
         if len(self._vecs) == 0:
             self._vec_size = 0
         else:

@@ -846,7 +846,7 @@ class FeaturePathVectorDictionaryType(FeaturePathType):
         # Not FeaturePathType... specific to VectorDictionaryType
         obj["internalize_dict"] = self._internalize_dict
         if self._internalize_dict:
-            obj["vector_dict"] = self._vector_dict.to_dict()
+            obj["vector_dict"] = self._vector_dict
         if self._vector_fn is not None:
             obj["vector_fn"] = pickle.dumps(self._vector_fn)
 
@@ -889,7 +889,7 @@ class FeaturePathVectorDictionaryType(FeaturePathType):
         # Not FeaturePathType... specific to VectorDictionaryType
         internalize_dict = obj["internalize_dict"]
         if internalize_dict:
-            vector_dict = StoredVectorDictionary(vecs=obj["vector_dict"])
+            vector_dict = obj["vector_dict"]
         else:
             vector_dict = StoredVectorDictionary(vecs=dict())
 
@@ -1088,6 +1088,13 @@ class FeatureSet:
         return FeatureSet(feature_types=self._feature_types)
 
     def save(self, dir_path):
+        info = dict()
+        info["feats"] = [feature_type.get_name() for feature_type in self._feature_types]
+
+        info_path = join(dir_path, "info")
+        with open(info_path, 'w') as fp:
+            json.dump(info, fp)
+
         for feature_type in self._feature_types:
             feature_type.save(join(dir_path, feature_type.get_name()))
 
@@ -1099,7 +1106,12 @@ class FeatureSet:
 
     @staticmethod
     def load(dir_path):
-        file_paths = [join(dir_path, f) for f in listdir(dir_path) if isfile(join(dir_path, f))]
+        info_path = join(dir_path, "info")
+        info = None
+        with open(info_path, 'r') as fp:
+            info = json.load(fp)
+        file_paths = [join(dir_path, f) for f in info["feats"]]
+        
         feature_types = []
         for file_path in file_paths:
             with open(file_path, 'r') as fp:

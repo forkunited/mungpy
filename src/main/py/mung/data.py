@@ -11,9 +11,10 @@ import json
 JSON_PATH_CACHE = dict()
 
 class Datum:
-    def __init__(self, properties=dict(), id_key="id"):
+    def __init__(self, properties=dict(), id_key="id", path_map=None):
         self._properties = properties
         self._id_key = id_key
+        self._path_map = path_map
 
         if id_key not in properties:
             raise ValueError("Datum properties object must have an id")
@@ -28,11 +29,16 @@ class Datum:
             return self._properties["type"]
 
     def has(self, path):
+        if self._path_map is not None and path in self._path_map and self.has(self._path_map[path]):
+            return True
         return len([match.value for match in Datum.parse_path(path).find(self._properties)]) > 0
 
     def get(self, path, first=True, include_paths=False):
         # FIXME: This should handle reference datums
         # at some point
+        if self._path_map is not None and path in self._path_map:
+            return self.get(self._path_map[path], first=first, include_paths=include_paths)
+
         path_values = [(str(match.full_path), match.value) for match in Datum.parse_path(path).find(self._properties)]
         if first:
             if len(path_values) == 0:
@@ -89,13 +95,13 @@ class MutableDatum(Datum):
 
     def set(self, key, value, path=None):
         objs = [self._properties]
-        if path is not None:
+        if path is not None and path != ".":
             objs = self.get(path, first=False)
         for obj in objs:
             obj[key] = value
 
 
-class DatumReference():
+class DatumReference:
     def __init__(self, datum, path):
         self._datum = datum
         self._path = path
@@ -223,7 +229,7 @@ class DataSet:
                         fp.write(json.dumps(datum_dict) + "\n")
 
     @classmethod
-    def load(cls, data_dir, id_key="id", order=None):
+    def load(cls, data_dir, id_key="id", order=None, path_map=None):
         D = DataSet(id_key=id_key, source_dir=data_dir)
         files = [join(data_dir, f) for f in listdir(data_dir) if isfile(join(data_dir, f))]
 
@@ -232,7 +238,7 @@ class DataSet:
                 json_strs = fp.readlines()
                 for json_str in json_strs:
                     D._data.append(Datum(properties=json.loads(json_str.strip()),
-                                         id_key=id_key))
+                                         id_key=id_key, path_map=path_map))
 
         if order is None:
             D.shuffle() # Ensure deterministic order if random seeded
