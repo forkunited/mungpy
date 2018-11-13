@@ -40,7 +40,7 @@ class Trainer:
         if self._optimizer_type == OptimizerType.ADAM:
             optimizer = Adam(ifilter(lambda p: p.requires_grad, model.parameters()), lr=self._lr, weight_decay=self._weight_decay)
         elif self._optimizer_type == OptimizerType.ADAGRAD_MUNG:
-            optimizer = Adagrad(ifilter(lambda p: p.requires_grad, model.parameters()), lr=self._lr, lr_decay=0, weight_decay=self._weight_decay, l1_C=self._l1_C)
+            optimizer = Adagrad(ifilter(lambda p: p.requires_grad, model.parameters()), lr=self._lr, lr_decay=0, weight_decay=self._weight_decay, l1_C=self._l1_C, no_non_singleton_l1=False)
         else:
             optimizer = Adadelta(ifilter(lambda p: p.requires_grad, model.parameters()), rho=0.95, lr=self._lr, weight_decay=self._weight_decay)
 

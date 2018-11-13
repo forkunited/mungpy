@@ -26,6 +26,7 @@ from mung.data import Partition
 def load_mvdata(config, ignore_paired_data=True):
     data_path = config["data_path"]
     mats = config["mats"]
+    
     D = MultiviewDataSet.load(data_path, **mats)
 
     D_paired = None

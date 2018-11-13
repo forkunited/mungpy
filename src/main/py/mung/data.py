@@ -97,8 +97,17 @@ class MutableDatum(Datum):
         objs = [self._properties]
         if path is not None and path != ".":
             objs = self.get(path, first=False)
-        for obj in objs:
-            obj[key] = value
+        if objs is not None and len(objs) > 0:
+            for obj in objs:
+                obj[key] = value
+        else:
+            path_keys = path.split(".")
+            cur_obj = self._properties
+            for path_key in path_keys:
+                if path_key not in cur_obj:
+                    cur_obj[path_key] = dict()
+                cur_obj = cur_obj[path_key]
+            cur_obj[key] = value
 
 
 class DatumReference:
@@ -202,6 +211,24 @@ class DataSet:
         data_union.extend(other._data)
         return DataSet(data=data_union, id_key=self._id_key, source_dir=None)
 
+    def histogram(self, field):
+        hist = dict()
+        for d in self._data:
+            vals = d.get(field)
+            if not isinstance(vals, list):
+                vals = [vals]
+            for val in vals:
+                if val is None:
+                    continue
+                elif isinstance(val, unicode) or isinstance(val, str) or \
+                    isinstance(val, float) or isinstance(val, int):
+                    if val not in hist:
+                        hist[val] = 0
+                    hist[val] += 1
+                else:
+                    raise ValueError("Unsupported histogram value: " + str(val))
+        return hist
+
     def save(self, data_dir, batch=1000):
         self._source_dir = data_dir
 
@@ -229,16 +256,23 @@ class DataSet:
                         fp.write(json.dumps(datum_dict) + "\n")
 
     @classmethod
-    def load(cls, data_dir, id_key="id", order=None, path_map=None):
+    def load(cls, data_dir, id_key="id", order=None, path_map=None, limit=None):
         D = DataSet(id_key=id_key, source_dir=data_dir)
-        files = [join(data_dir, f) for f in listdir(data_dir) if isfile(join(data_dir, f))]
+        file_names = sorted([int(f) for f in listdir(data_dir)])
+        files = [join(data_dir, str(f)) for f in file_names if isfile(join(data_dir, str(f)))]
 
         for f in files:
             with open(f, 'r') as fp:
                 json_strs = fp.readlines()
+                reached_limit = False
                 for json_str in json_strs:
                     D._data.append(Datum(properties=json.loads(json_str.strip()),
                                          id_key=id_key, path_map=path_map))
+                    if limit is not None and limit > 0 and len(D._data) >= limit:
+                        reached_limit = True
+                        break
+                if reached_limit:
+                    break
 
         if order is None:
             D.shuffle() # Ensure deterministic order if random seeded

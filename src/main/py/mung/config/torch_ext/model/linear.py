@@ -12,6 +12,7 @@ from mung.torch_ext.model.linear import DataParameter, MultinomialLogisticRegres
 #   (MultinomialLogisticRegression|OrdinalLogisticRegression|OrdisticRegression|PairwiseOrdinalLogisticRegression) label_count : [NUMBER OF OUTPUT CLASSES]
 #   (Optional for PairwiseOrdinalLogisticRegression) confidence_ordinals : [INDICATOR OF WHETHER TO PREDICT ORDINALS BASED ON CONFIDENCES]
 #   (Optional for PairwiseOrdinalLogisticRegression) constant_scalar : [INDICATOR OF WHETHER s PARAMETER IS CONSTANT ACROSS THRESHOLDS]
+#   (Optional for PairwiseOrdinalLogisticRegression) hidden_sizes : [LIST OF SIZES FOR HIDDEN LAYERS]
 #   bias : [INDICATOR OF WHETHER OR NOT TO INCLUDE BIAS TERM]
 # }
 def load_linear_model(config, D, gpu=False):
@@ -25,7 +26,11 @@ def load_linear_model(config, D, gpu=False):
         label_count =  config["label_count"]
         model = MultinomialLogisticRegression(name, input_size, label_count, bias=bias)
     elif config["arch_type"] == "LogisticRegression":
-        model = LogisticRegression(name, input_size, bias=bias)
+        hidden_sizes = []
+        if "hidden_sizes" in config:
+            hidden_sizes = config["hidden_sizes"]
+        output_size = D[data_parameter[DataParameter.OUTPUT]].get_feature_set().get_token_count()
+        model = LogisticRegression(name, input_size, output_size=output_size, bias=bias, hidden_sizes=hidden_sizes)
     elif config["arch_type"] == "OrdinalLogisticRegression":
         label_count =  config["label_count"]
         model = OrdinalLogisticRegression(name, input_size, label_count, bias=bias)
@@ -42,8 +47,12 @@ def load_linear_model(config, D, gpu=False):
         constant_scalar = True
         if "constant_scalar" in config:
             constant_scalar = bool(int(config["constant_scalar"]))
+        hidden_sizes = []
+        if "hidden_sizes" in config:
+            hidden_sizes = config["hidden_sizes"]
+
         label_count = config["label_count"]
-        model = PairwiseOrdinalLogisticRegression(name, input_size, label_count, bias=bias, ordinal_rescaling=ordinal_rescaling, confidence_ordinals=confidence_ordinals, constant_scalar=constant_scalar)
+        model = PairwiseOrdinalLogisticRegression(name, input_size, label_count, bias=bias, ordinal_rescaling=ordinal_rescaling, confidence_ordinals=confidence_ordinals, constant_scalar=constant_scalar, hidden_sizes=hidden_sizes)
     else: # LinearRegression
         model = LinearRegression(name, input_size, bias=bias)
     if gpu:

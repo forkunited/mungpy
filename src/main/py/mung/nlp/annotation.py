@@ -25,7 +25,8 @@ class Annotator(object):
     def annotate_data(self, data):
         annotated_data = []
         for i in range(data.get_size()):
-            print "Annotating " + data.get(i).get_id() + " (" + str(i+1) +  "/" + str(data.get_size()) + ")"
+            if i % 1000 == 0:
+                print "Annotating " + data.get(i).get_id() + " (" + str(i+1) +  "/" + str(data.get_size()) + ")"
             annotated_data.append(self.annotate_datum(data.get(i)))
         return mung.data.DataSet(data=annotated_data)
 
@@ -43,8 +44,8 @@ class Annotator(object):
     def _annotate_in_place(self, datum):
         """ Annotate a given datum """
 
-class ModelAnnotator(Annotator):
-    def __init__(self, annotator_name, model, features, transform_datum_fn, store_key, target_path=None, label_fn=None, model_input_name="input"):
+class ModelAnnotator(Annotator): # FIXME Refactor this so that target_path and store_key are pushed into one thing
+    def __init__(self, annotator_name, model, features, transform_datum_fn, store_key, target_path=None, store_path=None, label_fn=None, model_input_name="input", transform_anno_fn=None):
         Annotator.__init__(self)
         self._annotator_name = annotator_name
         self._model = model
@@ -52,12 +53,15 @@ class ModelAnnotator(Annotator):
 
         self._transform_datum_fn = transform_datum_fn
         self._store_key = store_key
+        self._store_path = store_path
         self._target_path = target_path
 
         self._label_fn = label_fn
         self._model_input_name = model_input_name
         self._data_parameter = { model_input_name : model_input_name } # FIXME Refactor this later
-        
+
+        self._transform_anno_fn = transform_anno_fn
+
     def __str__(self):
         return self._annotator_name
 
@@ -70,12 +74,17 @@ class ModelAnnotator(Annotator):
         
         for (target_path, target) in targets:
             transformed_target = self._transform_datum_fn(target)
-            transformed_target["id"] = datum.get_id() + " _" + target_path
+            if target_path != ".":
+                transformed_target["id"] = datum.get_id() + "_" + target_path
+            else:
+                transformed_target["id"] = datum.get_id() 
             transformed_datums = [Datum(properties=transformed_target)]
 
             annos = self._annotate_for_datums(datum, transformed_datums, target_path)
             obj = annos.to_dict()
-            datum.set(self._store_key, obj, path=target_path)
+            if self._transform_anno_fn is not None:
+                obj = self._transform_anno_fn(obj)
+            datum.set(self._store_key, obj, path=self._store_path) # FIXME target_path/store_path broken if they return a different number of objects
         return datum
 
     def _annotate_for_datums(self, source_datum, datums, target_path):

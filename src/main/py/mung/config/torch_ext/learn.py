@@ -12,6 +12,7 @@ from mung.torch_ext.learn import Trainer
 #   weight_decay : [WEIGHT DECAY]
 #   (Optional) gradient_clipping : [GRADIENT CLIPPING]
 #   log_interval : [LOG INTERVAL]
+#   (Optional) l1_C : [L1 hyper-parameter if optimizer_type is ADAGRAD_MUNG]
 # }
 def train_from_config(config, data_parameter, loss_criterion, logger, evaluations, model, data_sets, best_part_fn=None):
     data = data_sets[config["data"]]
@@ -35,12 +36,16 @@ def train_from_config(config, data_parameter, loss_criterion, logger, evaluation
     
     log_interval = int(config["log_interval"])
 
+    l1_C = 0
+    if "l1_C" in config:
+        l1_C = float(config["l1_C"])
+
     trainer = Trainer(data_parameter, loss_criterion, logger, \
             evaluations[0], other_evaluations=evaluations[1:len(evaluations)], \
             max_evaluation=bool(int(config["max_evaluation"])), \
             batch_size=batch_size, optimizer_type=optimizer_type, lr=learning_rate, \
             weight_decay=weight_decay, grad_clip=gradient_clipping, log_interval=log_interval, 
-            best_part_fn=best_part_fn, sample_with_replacement=sample_with_replacement)
+            best_part_fn=best_part_fn, sample_with_replacement=sample_with_replacement, l1_C=l1_C)
     
     last_model, best_part, best_iteration = trainer.train(model, data, iterations)
     return last_model, best_part, best_iteration

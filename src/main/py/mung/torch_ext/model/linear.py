@@ -62,7 +62,13 @@ class OrdinalLogisticLoss(nn.Module):
 
         # Compute all-threshold loss
         return -torch.sum((y >= 0).float()*self._log_sigmoid(s * input))
-        
+
+        # FIXME Remove below here (scratch attempt at hinge)
+        #l_in = (s * input).unsqueeze(2)
+        #zero = Variable(torch.zeros(l_in.size()))
+        #l_in = torch.cat((l_in, zero), 2)
+        #return torch.sum((y >= 0).float()*torch.max(l_in, 2)[0])
+
 class CombinedLoss(nn.Module):
     def __init__(self, losses, weights):
         super(CombinedLoss, self).__init__()
@@ -108,7 +114,12 @@ class LinearModel(nn.Module):
         return next(self.parameters()).is_cuda
 
     def get_weights(self):
-        return list((list(self.parameters()))[0].data.view(-1))
+        params = list(self.parameters())
+        for param in params:
+            weights = param.data.view(-1)
+            if weights.size(0) ==  self._input_size * self._output_size: # FIXME Hack for now
+                return [w.item() for w in list(weights)] 
+        return None
 
     def get_nonzero_weight_count(self):
         nz = torch.nonzero((list(self.parameters()))[0].data.view(-1))
@@ -145,25 +156,42 @@ class LinearModel(nn.Module):
         return loss_criterion(model_out, target_out)
 
     def predict_data(self, data, data_parameters, rand=False, prediction_batch_size=64):
-        pred = np.array([])
+        pred = None
         prediction_batch_size = min(prediction_batch_size, data.get_size())
         for i in range(data.get_num_batches(prediction_batch_size)):
             batch = data.get_batch(i, prediction_batch_size)
-            pred = np.concatenate((pred, self.predict(batch, data_parameters, rand=rand).numpy()), axis=0)
+            cur_pred = self.predict(batch, data_parameters, rand=rand).numpy()
+            if pred is None:
+                pred = cur_pred
+            else:
+                pred = np.concatenate((pred, cur_pred), axis=0)
         batch = data.get_final_batch(prediction_batch_size)
         if batch is not None:
-            pred = np.concatenate((pred, self.predict(batch, data_parameters, rand=rand).numpy()), axis=0)
+            cur_pred = self.predict(batch, data_parameters, rand=rand).numpy()
+            if pred is None:
+                pred = cur_pred
+            else:
+                pred = np.concatenate((pred, cur_pred), axis=0)
         return pred
 
     def score_data(self, data, data_parameters, prediction_batch_size=64):
-        score = np.array([])
+        score = None
         prediction_batch_size = min(prediction_batch_size, data.get_size())
         for i in range(data.get_num_batches(prediction_batch_size)):
             batch = data.get_batch(i, prediction_batch_size)
-            score = np.concatenate((score, self.score(batch, data_parameters).numpy()), axis=0)
+            cur_score = self.score(batch, data_parameters).numpy()
+            if score is None:
+                score = cur_score
+            else:
+                score = np.concatenate((score, cur_score), axis=0)
+
         batch = data.get_final_batch(prediction_batch_size)
         if batch is not None:
-            score = np.concatenate((score, self.score(batch, data_parameters).numpy()), axis=0)
+            cur_score = self.score(batch, data_parameters).numpy()
+            if score is None:
+                score = cur_score
+            else:
+                score = np.concatenate((score, cur_score), axis=0)
         return score
 
     def p_data(self, data, data_parameters, prediction_batch_size=64):
@@ -207,10 +235,22 @@ class LinearRegression(LinearModel):
         return self._mseloss
 
 class LogisticRegression(LinearModel):
-    def __init__(self, name, input_size, init_params=None, bias=False):
-        super(LogisticRegression, self).__init__(name, input_size, init_params=init_params, bias=bias)
+    def __init__(self, name, input_size, output_size=1, init_params=None, bias=False, hidden_sizes=[]):
+        super(LogisticRegression, self).__init__(name, input_size if len(hidden_sizes) == 0 else hidden_sizes[-1], output_size=output_size, init_params=init_params, bias=bias)
         self._lrloss = LRLoss(size_average=False)
         self._sigmoid = nn.Sigmoid()
+
+        self._hidden_nl = nn.LeakyReLU()
+        self._hidden_layers = []
+        cur_size = input_size
+        for hidden_size in hidden_sizes:
+            self._hidden_layers.append(nn.Linear(cur_size, hidden_size, bias=bias))
+            cur_size = hidden_size
+
+    def forward(self, input):
+        for hidden_layer in self._hidden_layers:
+            input = self._hidden_nl(hidden_layer(input))
+        return self._linear(input)
 
     def predict(self, batch, data_parameters, rand=False):
         p = self._sigmoid(self.forward_batch(batch, data_parameters))
@@ -338,8 +378,8 @@ class MultinomialLogisticRegression(LinearModel):
 
 
 class PairwiseOrdinalLogisticRegression(LinearModel):
-    def __init__(self, name, input_size, label_count, init_params=None, bias=False, ordinal_rescaling=1.0, confidence_ordinals=False, constant_scalar=True):
-        super(PairwiseOrdinalLogisticRegression, self).__init__(name, input_size, output_size=1, init_params=init_params, bias=bias)
+    def __init__(self, name, input_size, label_count, init_params=None, bias=False, ordinal_rescaling=1.0, confidence_ordinals=False, constant_scalar=True, hidden_sizes=[]):
+        super(PairwiseOrdinalLogisticRegression, self).__init__(name, input_size if len(hidden_sizes) == 0 else hidden_sizes[-1], output_size=1, init_params=init_params, bias=bias)
         self._theta = nn.Parameter(torch.zeros(label_count-1))
         self._sigmoid = nn.Sigmoid()
         self._loss = DisjunctiveLoss([LRLoss(size_average=False), OrdinalLogisticLoss(label_count)], \
@@ -347,11 +387,21 @@ class PairwiseOrdinalLogisticRegression(LinearModel):
         self._confidence_ordinals = confidence_ordinals
         self._constant_scalar = constant_scalar
 
+        self._hidden_nl = nn.LeakyReLU()
+        self._hidden_layers = []
+        cur_size = input_size
+        for hidden_size in hidden_sizes:
+            self._hidden_layers.append(nn.Linear(cur_size, hidden_size, bias=bias))
+            cur_size = hidden_size
+
         if not constant_scalar:
             self._s = nn.Parameter(torch.ones(label_count-1))
 
     def _is_ordinal_batch(self, batch, data_parameters):
         return not isinstance(batch[data_parameters[DataParameter.INPUT]], tuple)
+
+    def get_theta(self):
+        return [t.item() for t in list(self._theta)] 
 
     def forward_batch(self, batch, data_parameters):
         input = batch[data_parameters[DataParameter.INPUT]]
@@ -370,11 +420,18 @@ class PairwiseOrdinalLogisticRegression(LinearModel):
             B = input.size(0)      
             K = self._theta.size(0)
             if self._constant_scalar:
-                return self._theta.unsqueeze(0).expand(B, K) - self._linear(input).expand(B, K)
+                return self._theta.unsqueeze(0).expand(B, K) - self._forward_through_layers(input).expand(B, K)
             else:
-                return (self._theta.unsqueeze(0).expand(B, K) - self._linear(input).expand(B, K))/self._s.unsqueeze(0).expand(B, K)
+                return (self._theta.unsqueeze(0).expand(B, K) - self._forward_through_layers(input).expand(B, K))/self._s.unsqueeze(0).expand(B, K)
         else:
-            return self._linear(input[0] - input[1])
+            return self._forward_through_layers(input)
+
+    def _forward_through_layers(self, input):
+        if isinstance(input, tuple):
+            input = input[0] - input[1]
+        for hidden_layer in self._hidden_layers:
+            input = self._hidden_nl(hidden_layer(input))
+        return self._linear(input)
 
     def loss(self, batch, data_parameters, loss_criterion):
         output = None

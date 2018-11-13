@@ -262,10 +262,14 @@ class FeatureMatrixType(FeatureType):
 
         return obj
 
+    def save(self, file_path):
+        with open(file_path, 'w') as fp:
+            pickle.dump(self.to_dict(), fp)
+
     @staticmethod
     def load(file_path):
         with open(file_path, 'r') as fp:
-            obj = json.load(fp)
+            obj = pickle.load(fp)
             return FeatureMatrixType.from_dict(obj)
 
     @staticmethod
@@ -278,6 +282,52 @@ class FeatureMatrixType(FeatureType):
             index = obj["index"]
 
         return FeatureMatrixType(name, matrix_fn, size, index=index)
+
+class FeatureBucketedValueType(FeatureMatrixType):
+    def __init__(self, name, value_fn, bucket_max, bucket_width, bucket_min=0.0):
+        FeatureMatrixType.__init__(self, name, lambda d : self._make_bucket_one_hot(value_fn(d)), int((bucket_max-bucket_min)/bucket_width))
+        self._value_fn = value_fn
+        self._bucket_min = bucket_min
+        self._bucket_max = bucket_max
+        self._bucket_width = bucket_width
+
+    def _make_bucket_one_hot(self, value):
+        one_hot = np.zeros(self._size)
+        index = int(min(np.floor((value-self._bucket_min)/self._bucket_width), len(one_hot) - 1))
+        one_hot[index] = 1.0
+        return one_hot
+
+    def __eq__(self, feature_type):
+        if not isinstance(feature_type, FeatureBucketedValueType):
+            return False
+        if self._name != feature_type._name:
+            return False
+        return True
+
+    def to_dict(self):
+        obj = dict()
+        obj["type"] = "FeatureBucketedValueType"
+        obj["name"] = self._name
+        obj["value_fn"] = pickle.dumps(self._value_fn)
+        obj["bucket_min"] = self._bucket_min
+        obj["bucket_max"] = self._bucket_max
+        obj["bucket_width"] = self._bucket_width
+        return obj
+
+    @staticmethod
+    def load(file_path):
+        with open(file_path, 'r') as fp:
+            obj = pickle.load(fp)
+            return FeatureBucketedValueType.from_dict(obj)
+
+    @staticmethod
+    def from_dict(obj):
+        name = obj["name"]
+        value_fn = pickle.loads(obj["value_fn"])
+        bucket_min = obj["bucket_min"]
+        bucket_max = obj["bucket_max"]
+        bucket_width = obj["bucket_width"]
+        return FeatureBucketedValueType(name, value_fn, bucket_max, bucket_width, bucket_min=bucket_min)
 
 
 class FeatureMatrixSequence(FeatureSequence):
@@ -385,7 +435,7 @@ class FeaturePathToken(FeatureToken):
         pass
 
 class FeaturePathType(FeatureType):
-    def __init__(self, name, paths, fixed_path_values=None, min_occur=1, no_init=False, value_type=ValueType.ENUMERABLE_ONE_HOT, value_fn=None, seq_index=None, vocab=None, token_fn=lambda x : x):
+    def __init__(self, name, paths, fixed_path_values=None, min_occur=1, no_init=False, value_type=ValueType.ENUMERABLE_ONE_HOT, value_fn=None, seq_index=None, vocab=None, token_fn=lambda x : x, ignore_list_indices=False):
         FeatureType.__init__(self)
         self._name = name
         self._paths = paths
@@ -399,6 +449,7 @@ class FeaturePathType(FeatureType):
         self._counter = None
         self._vocab = vocab
         self._fixed_path_values = fixed_path_values
+        self._ignore_list_indices = ignore_list_indices
 
     def get_datum_length(self, datum):
         if self._seq_index is None:
@@ -456,7 +507,10 @@ class FeaturePathType(FeatureType):
             if isinstance(values[0], list):
                 values = [el for value in values for el in value]
             for i in range(len(values)):
-                mapping.append((path + "_" + str(i), self._token_fn(values[i])))
+                if self._ignore_list_indices:
+                    mapping.append((path, self._token_fn(values[i])))
+                else:
+                    mapping.append((path + "_" + str(i), self._token_fn(values[i])))
         return mapping
 
     # Get sequence of (key -> value) mappings represented as
@@ -484,11 +538,11 @@ class FeaturePathType(FeatureType):
                 index = self._vocab[path_value[0]]
                 vec[start_index + index] = path_value[1]
             else:
-                key = path_value[0] + "_" + path_value[1]
+                key = path_value[0] + "__" + path_value[1]
                 if key in self._vocab:
                     index = self._vocab[key]
-                elif path_value[0] + "_" + self._token_fn(Symbol.SEQ_UNC) in self._vocab:
-                    index = self._vocab[path_value[0] + "_" + self._token_fn(Symbol.SEQ_UNC)]
+                elif path_value[0] + "__" + self._token_fn(Symbol.SEQ_UNC) in self._vocab:
+                    index = self._vocab[path_value[0] + "__" + self._token_fn(Symbol.SEQ_UNC)]
                 else:
                     continue
 
@@ -509,11 +563,11 @@ class FeaturePathType(FeatureType):
     def get_token(self, index):
         # FIXME This is a bit of a hack (splitting for convenience)
         path_value = self._vocab.inv[index]
-        under_idx = path_value.rfind("_")
+        under_idx = path_value.rfind("__")
         path = path_value[:under_idx]
         value = ""
         if under_idx < len(path_value) - 1:
-            value = path_value[under_idx+1:]
+            value = path_value[under_idx+2:]
 
         return FeaturePathToken(self._name, path, index, value)
 
@@ -541,7 +595,7 @@ class FeaturePathType(FeatureType):
             else:
                 for path_values in path_values_seq:
                     for path_value in path_values:
-                        self._counter[path_value[0] + "_" + path_value[1]] += 1
+                        self._counter[path_value[0] + "__" + path_value[1]] += 1
         else:
             path_values = self._get_path_values(datum)
             if self._value_type == ValueType.SCALAR:
@@ -549,7 +603,7 @@ class FeaturePathType(FeatureType):
                     self._counter[path_value[0]] += 1
             else:
                 for path_value in path_values:
-                    self._counter[path_value[0] + "_" + path_value[1]] += 1
+                    self._counter[path_value[0] + "__" + path_value[1]] += 1
 
     def init_end(self):
         if self._no_init:
@@ -560,7 +614,7 @@ class FeaturePathType(FeatureType):
             index = 0
             for path, values in self._fixed_path_values.iteritems():
                 for value in values:
-                    path_value = path + "_0_" + self._token_fn(value)
+                    path_value = path + "__" + self._token_fn(value)
                     if path_value not in self._vocab:
                         self._vocab[path_value] = index
                         index += 1
@@ -580,8 +634,8 @@ class FeaturePathType(FeatureType):
                 i1 = 0
                 i2 = 0
 
-                v1_path = v1[0:v1.rfind("_")]
-                v2_path = v2[0:v2.rfind("_")]
+                v1_path = v1[0:v1.rfind("__")]
+                v2_path = v2[0:v2.rfind("__")]
 
                 for i in range(len(self._paths)):
                     if self._paths[i] == v1_path:
@@ -609,10 +663,10 @@ class FeaturePathType(FeatureType):
         index = 0
         if self._seq_index is not None and self._value_type != ValueType.SCALAR:
             for path in self._paths:
-                self._vocab[path + "_" + self._token_fn(Symbol.SEQ_UNC)] = index*4 + Symbol.index(Symbol.SEQ_UNC)
-                self._vocab[path + "_" + self._token_fn(Symbol.SEQ_START)] = index*4 + Symbol.index(Symbol.SEQ_START)
-                self._vocab[path + "_" + self._token_fn(Symbol.SEQ_END)] = index*4 + Symbol.index(Symbol.SEQ_END)
-                self._vocab[path + "_" + self._token_fn(Symbol.SEQ_MID)] = index*4 + Symbol.index(Symbol.SEQ_MID)
+                self._vocab[path + "__" + self._token_fn(Symbol.SEQ_UNC)] = index*4 + Symbol.index(Symbol.SEQ_UNC)
+                self._vocab[path + "__" + self._token_fn(Symbol.SEQ_START)] = index*4 + Symbol.index(Symbol.SEQ_START)
+                self._vocab[path + "__" + self._token_fn(Symbol.SEQ_END)] = index*4 + Symbol.index(Symbol.SEQ_END)
+                self._vocab[path + "__" + self._token_fn(Symbol.SEQ_MID)] = index*4 + Symbol.index(Symbol.SEQ_MID)
                 index += 1
 
             index = index*4
@@ -645,6 +699,8 @@ class FeaturePathType(FeatureType):
         if self._vocab is not None:
             obj["vocab"] = dict(self._vocab)
 
+        obj["ignore_list_indices"] = self._ignore_list_indices
+
         return obj
 
     def save(self, file_path):
@@ -676,8 +732,11 @@ class FeaturePathType(FeatureType):
         vocab = None
         if "vocab" in obj:
             vocab = bidict(obj["vocab"])
+        ignore_list_indices = False
+        if "ignore_list_indices" in obj:
+            ignore_list_indices = obj["ignore_list_indices"]
 
-        return FeaturePathType(name, paths, min_occur=min_occur, no_init=no_init, value_type=value_type, value_fn=value_fn, seq_index=seq_index, token_fn=token_fn, vocab=vocab)
+        return FeaturePathType(name, paths, min_occur=min_occur, no_init=no_init, value_type=value_type, value_fn=value_fn, seq_index=seq_index, token_fn=token_fn, vocab=vocab, ignore_list_indices=ignore_list_indices)
 
 
 class FeaturePathSequence(FeatureSequence):
@@ -1890,7 +1949,9 @@ class MultiviewDataSet:
         if size is None:
             return self
         if size > self._data.get_size():
-            raise ValueError("Subset size cannot be greater than data set size")
+            size = self._data.get_size()
+        if size == 0:
+            return self.filter(lambda d : False)
         subset_indices = np.random.choice(self.get_size(), size, replace=False)
         subset_ids = Set([self._data.get(subset_indices[i]).get_id() for i in range(len(subset_indices))])
         filter_fn = lambda d : d.get_id() in subset_ids
@@ -1900,7 +1961,9 @@ class MultiviewDataSet:
         if size is None:
             return self
         if size > self._data.get_size():
-            raise ValueError("Subset size cannot be greater than data set size")
+            size = self._data.get_size()
+        if size == 0:
+            return self.filter(lambda d : False)
         subset_indices = np.array(range(subset_i*size, (subset_i+1)*size))
         subset_ids = Set([self._data.get(subset_indices[i]).get_id() for i in range(len(subset_indices))])
         filter_fn = lambda d : d.get_id() in subset_ids
@@ -2209,7 +2272,7 @@ class PairedMultiviewDataSet:
             if (not init_with_replacement and index_tuple in index_tuple_set) \
                 or not filter_fn(d0, d1) \
                 or (partition is not None and \
-                    reverse_partition[partition_key_fn(d0)] != reverse_partition[partition_key_fn(d1)]):
+                    (partition_key_fn(d0) not in reverse_partition or partition_key_fn(d1) not in reverse_partition or reverse_partition[partition_key_fn(d0)] != reverse_partition[partition_key_fn(d1)])):
                 continue
             index_tuple_set.add(index_tuple)
 
@@ -2249,6 +2312,7 @@ class MixedBatchData:
 
 register_feature_type(FeaturePathType)
 register_feature_type(FeaturePathVectorDictionaryType)
+register_feature_type(FeatureBucketedValueType)
 register_feature_type(FeatureMatrixType)
 register_feature_type(FeatureProductType)
 register_feature_seq_type(FeatureMatrixSequence)

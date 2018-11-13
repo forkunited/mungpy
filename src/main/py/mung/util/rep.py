@@ -55,11 +55,18 @@ class StoredVectorDictionary:
         lines = None
         with codecs.open(file_path, encoding='utf-8') as f:
             lines = f.readlines()
+
         vec_size = 0
         for i in range(header_lines, len(lines)):
-            line_parts = lines[i].split(delimiter)
+            line_parts = None
+            if delimiter is not None:
+                line_parts = lines[i].split(delimiter)
+            else:
+                line_parts = lines[i].split()
             key = line_parts[0]
             vec = np.array([float(val) for val in line_parts[1:]])
+            if len(vec) == 0:
+                continue
             if transform_fn is not None:
                 vec = transform_fn(vec)
             self._vecs[key] = vec
@@ -76,3 +83,11 @@ class StoredVectorDictionary:
 
             for key in self._vecs.keys():
                 self._vecs[key] = (self._vecs[key] - mu)/sigma
+
+    @staticmethod
+    def make_and_save(vecs, file_path, delimiter=" "):
+        with open(file_path, 'w') as fp:
+            for k in vecs:
+                fp.write(k.encode("utf-8") + delimiter)
+                fp.write(delimiter.join([str(v) for v in vecs[k].tolist()]) + "\n")
+        return StoredVectorDictionary(vecs=vecs, file_path=file_path, delimiter=delimiter)

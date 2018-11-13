@@ -358,27 +358,43 @@ class FoldedCVResults:
         return full_data
 
     def _predict_data(self, data_name):
-        y_pred = np.array([])
+        y_pred = None
         data = self._datas[data_name]
         for i in range(len(data)):
             y_pred_i = self._fold_models[i].predict_data(data[i], self._data_parameters[i], rand=False)
-            y_pred = np.concatenate((y_pred,y_pred_i))
+            if y_pred is None:
+                y_pred = y_pred_i
+            else:
+                y_pred = np.concatenate((y_pred,y_pred_i))
         return y_pred
 
     def _view_data(self, data_name, target_parameter):
-        target = np.array([])
+        target = None
         data = self._datas[data_name]
         for i in range(len(data)):
             target_i = data[i].get_batch(0,data[i].get_size())[self._data_parameters[i][target_parameter]].squeeze().numpy()
-            target = np.concatenate((target, target_i))
+            if target is None:
+                target = target_i
+            else:
+                target = np.concatenate((target, target_i))
         return target
 
+    def _view_data_labels(self, data_name, target_parameter):
+        data = self._datas[data_name][0]
+        feature_set = data[self._data_parameters[0][target_parameter]].get_feature_set()
+        tokens = [feature_set.get_feature_token(i) for i in range(feature_set.get_size())]
+        labels = [token.get_value() for token in tokens]
+        return labels
+
     def _score_data(self, data_name):
-        y_score = np.array([])
+        y_score = None
         data = self._datas[data_name]
         for i in range(len(data)):
             y_score_i = self._fold_models[i].score_data(data[i], self._data_parameters[i])
-            y_score = np.concatenate((y_score,y_score_i))
+            if y_score is None:
+                y_score = y_score_i
+            else:
+                y_score = np.concatenate((y_score,y_score_i))
         return y_score
 
     def _p_data(self, data_name):
@@ -436,14 +452,26 @@ class FoldedCVResults:
         y_score = self._score_data(data_name)
         y_true = self._view_data(data_name, target_parameter)
         results = dict()
-        for metric in prediction_metrics:
-            results[metric.get_name()] = metric.compute(y_true, y_pred)
-        for metric in score_metrics:
-            results[metric.get_name()] = metric.compute(y_true, y_score)
+        if len(y_true.shape) < 2:
+            for metric in prediction_metrics:
+                results[metric.get_name()] = metric.compute(y_true, y_pred)
+            for metric in score_metrics:
+                results[metric.get_name()] = metric.compute(y_true, y_score)
+        else:
+            labels = self._view_data_labels(data_name, target_parameter)
+            for i in range(len(labels)):
+                for metric in prediction_metrics:
+                    results[metric.get_name() + "_" + labels[i]] = metric.compute(y_true[:,i], y_pred[:,i])
+                for metric in score_metrics:
+                    results[metric.get_name() + "_" + labels[i]] = metric.compute(y_true[:,i], y_score[:,i])
+
         return results
 
     def get_data_metric_results_string(self, data_name):
         results = self.get_data_metric_results(data_name)
+        if results is None:
+            return None
+
         results_str = ""
         for metric_name, metric_value in results.iteritems():
             if isinstance(metric_value, str) or \
@@ -504,10 +532,10 @@ class Table:
         for i in range(len(self._values)):
             values.append([])
             for j in range(len(self._values[i])):
-                if isinstance(self._values[i][j],float) or isinstance(self._values[i][j], int):
-                    values[i].append(str(self._values[i][j]))
-                else:
+                if isinstance(self._values[i][j], str) or isinstance(self._values[i][j], unicode):
                     values[i].append(self._values[i][j].encode("utf-8"))
+                else:
+                    values[i].append(str(self._values[i][j]))
 
         s = ''
         if self._column_labels is not None:

@@ -176,7 +176,10 @@ class ModulePrediction(ModuleEvaluation):
         return pred.numpy()
 
     def _aggregate_batch(self, agg, batch_result):
-        return np.concatenate((agg, batch_result), axis=0)
+        if len(agg.shape) < len(batch_result.shape) and agg.shape[0] == 0:
+            return batch_result
+        else:
+            return np.concatenate((agg, batch_result), axis=0)
 
     def _initialize_result(self):
         return np.array([])
@@ -190,7 +193,12 @@ class ModulePrediction(ModuleEvaluation):
         if len(self._metrics) == 0:
             final_result = [y_true, y_pred]
         else:
-            final_result = [metric.compute(y_true, y_pred) for metric in self._metrics]
+            final_result = []
+            for metric in self._metrics:
+                if len(y_true.shape) < 2:
+                    final_result.append(metric.compute(y_true, y_pred))
+                else:
+                    final_result.append(np.mean([metric.compute(y_true[:,i], y_pred[:, i]) for i in range(y_pred.shape[1])]))
 
         if len(final_result) > 1:
             return tuple(final_result)
