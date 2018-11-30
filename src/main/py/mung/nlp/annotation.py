@@ -8,6 +8,9 @@ TYPE_POS = "NLPPoS"
 TYPE_LEMMAS = "NLPLemmas"
 TYPE_STRINGS = "NLPStrings"
 TYPE_SENTENCES = "NLPSentences"
+TYPE_PARAGRAPHS = "NLPParagraphs"
+TYPE_MORPHOLOGY = "NLPMorphology"
+TYPE_DEPENDENCIES = "NLPDependencies"
 
 class Annotator(object):
     __metaclass__ = abc.ABCMeta
@@ -285,6 +288,57 @@ class Strings(TokensAnnotation):
 
         return Strings(target_ref, strs)
 
+class MorphologicalProperties:
+    def __init__(self, props):
+        self._props = props
+
+    def to_dict(self):
+        return self._props
+
+    @staticmethod
+    def from_conllu(conllu_str):
+        props = dict()
+
+        if conllu_str == "_":
+            return props
+
+        for prop in conllu_str.split('|'):
+            prop_key_value = prop.split('=')
+            props[prop_key_value[0]] = prop_key_value[1]
+        return MorphologicalProperties(props)
+
+    @staticmethod
+    def from_dict(obj):
+        return MorphologicalProperties(obj)
+
+class Morphology(TokensAnnotation):
+    def __init__(self, target_ref, morphs):
+        TokensAnnotation.__init__(self, target_ref)
+        self._morphs = morphs
+
+    def get_type(self):
+        return TYPE_MORPHOLOGY
+
+    def get(self, index):
+        return self._morphs[index]
+
+    def to_dict(self):
+        obj = dict()
+        obj["type"] = TYPE_MORPHOLOGY
+        obj["target"] = self._target_ref.get_path()
+        obj["morphs"] = [morph.to_dict() for morph in self._morphs]
+        return obj
+
+    @staticmethod
+    def from_dict(datum, obj):
+        if not isinstance(obj, dict) or "type" not in obj or obj["type"] != TYPE_MORPHOLOGY:
+            return obj
+
+        target_ref = mung.data.DatumReference(datum, obj["target"])
+        morphs = [MorphologicalProperties.from_dict(morph_dict) for morph_dict in obj["morphs"]]
+
+        return Morphology(target_ref, morphs)
+
 class Sentences(Annotation):
     def __init__(self, target_ref, token_spans):
         Annotation.__init__(self, target_ref)
@@ -315,3 +369,94 @@ class Sentences(Annotation):
         spans = [(span[0], span[1]) for span in obj["token_spans"]]
 
         return Sentences(target_ref, token_spans)
+
+class SentencesAnnotation(Annotation):
+    __metaclass__ = abc.ABCMeta
+
+    def __init__(self, target_ref):
+        Annotation.__init__(self, target_ref)
+        self._sentences = self.get_target()
+
+    def get_size(self):
+        return self.get_target().get_size()
+
+    def get_token_span(self, index):
+        return self.get_target().get(index)
+
+    @abc.abstractmethod
+    def get_type(self):
+        """ Get type of the annotation """
+
+
+class DependencyTree:
+    def __init__(self, deps):
+        # deps should be a list of { type, parent }
+        # the root parent should be represented by -1 
+        self._deps = deps
+    
+    def to_dict(self):
+        return { "deps" : self._deps }
+
+    @staticmethod
+    def from_dict(obj):
+        deps = obj["deps"]
+        return DependencyTree(deps)
+
+class Dependencies(SentencesAnnotation):
+    def __init__(self, target_ref, trees):
+        SentencesAnnotation.__init__(self, target_ref)
+        self._trees = trees
+
+    def get_type(self):
+        return TYPE_DEPENDENCIES
+
+    def get(self, index):
+        return self._trees[index]
+
+    def to_dict(self):
+        obj = dict()
+        obj["type"] = TYPE_DEPENDENCIES
+        obj["target"] = self._target_ref.get_path()
+        obj["trees"] = [tree.to_dict() for tree in self._trees]
+        return obj
+
+    @staticmethod
+    def from_dict(datum, obj):
+        if not isinstance(obj, dict) or "type" not in obj or obj["type"] != TYPE_DEPENDENCIES:
+            return None
+
+        target_ref = mung.data.DatumReference(datum, obj["target"])
+        trees = [DependencyTree.from_dict(tree_dict) for tree_dict in obj["trees"]]
+
+        return Dependencies(target_ref, trees)
+
+class Paragraphs(Annotation):
+    def __init__(self, target_ref, token_spans):
+        Annotation.__init__(self, target_ref)
+        self._token_spans = token_spans
+
+    def get_type(self):
+        return TYPE_PARAGRAPHS
+
+    def get_size(self):
+        return len(self._token_spans)
+
+    def get(self, index):
+        return self._token_spans[index]
+
+    def to_dict(self):
+        obj = dict()
+        obj["type"] = TYPE_PARAGRAPHS
+        obj["target"] = self._target_ref.get_path()
+        obj["token_spans"] = [[span[0], span[1]] for span in self._token_spans]
+        return obj
+
+    @staticmethod
+    def from_dict(datum, obj):
+        if not isinstance(obj, dict) or "type" not in obj or obj["type"] != TYPE_PARAGRAPHS:
+            return None
+
+        target_ref = mung.data.DatumReference(datum, obj["target"])
+        spans = [(span[0], span[1]) for span in obj["token_spans"]]
+
+        return Paragraphs(target_ref, token_spans)

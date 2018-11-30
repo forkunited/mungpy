@@ -113,6 +113,9 @@ class MutableDatum(Datum):
 class DatumReference:
     def __init__(self, datum, path):
         self._datum = datum
+
+        while path.startswith(".") and len(path) > 1:
+            path = path[1:]
         self._path = path
 
     def get_datum(self):
