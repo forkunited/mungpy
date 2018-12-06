@@ -170,17 +170,18 @@ class UDPipeAnnotator(Annotator):
             if len(line_parts) >= 10: # token line
                 if not line_parts[0].isdigit():
                     token_range = line_parts[0].split('-')
+                    token_range = (int(token_range[0]), int(token_range[1]))
                     cur_contracted_token_indices.add(token_range[0])
                     cur_contracted_token_indices.add(token_range[1])
-                    cur_contracted_token_skips += int(token_range[1]) - int(token_range[0])
+                    cur_contracted_token_skips += token_range[1] - token_range[0]
                     cur_contracted_token = line_parts[1]
                     continue
                 
                 token_str = line_parts[1]
-                if cur_contracted_token is not None:
+                if cur_contracted_token is not None: # Will occur at token immediately after contraction
                     token_str = cur_contracted_token
                     cur_contracted_token = None
-                elif line_parts[0] in cur_contracted_token_indices:
+                elif int(line_parts[0]) in cur_contracted_token_indices:
                     continue
 
                 lemma = line_parts[2]
@@ -193,18 +194,19 @@ class UDPipeAnnotator(Annotator):
                 token_char_spans.append((cur_char, cur_char + len(token_str)))
                 pos_tags.append(pos)
                 lemmas.append(lemma)
-                cur_deps.append({ 'type' : dep_type, 'parent' : dep_parent - 1})
+                cur_deps.append({ 'type' : dep_type, 'parent' : dep_parent - 1 - cur_contracted_token_skips})
                 morphs.append(MorphologicalProperties.from_conllu(morph_str))
                 token_strs.append(token_str)
 
                 num_spaces_after = 1
-                if spaces_after.startswith('SpacesAfter='):
-                    spaces_after = spaces_after.split('=')[1]
-                    if spaces_after == 'No':
+                if spaces_after.startswith('SpaceAfter='):
+                    spaces_after_value = spaces_after.split('=')[1]
+                    if spaces_after_value == 'No':
                         num_spaces_after = 0
                     else:
-                        num_spaces_after = len(spaces_after.replace('\\', ''))
-                
+                        num_spaces_after = len(spaces_after_value.replace('\\', ''))
+
+                # print token_str + " " + spaces_after + " " + str(num_spaces_after) + " " + str(len(token_str))
                 cur_char += len(token_str) + num_spaces_after
                 cur_token += 1
             elif line.startswith('# newpar') and cur_token > 0:
@@ -214,11 +216,17 @@ class UDPipeAnnotator(Annotator):
                 sentence_token_spans.append((cur_sentence_start_token, cur_token))
                 cur_sentence_start_token = cur_token
 
-                # FIXME Subtract off token skips (the offset is not sufficient for this...)
                 dep_trees.append(DependencyTree(cur_deps))
                 cur_contracted_token_skips = 0
                 cur_contracted_token_indices = set()
                 cur_deps = []
+            # else:
+            #    print line
+        
+        if cur_token != 0: # Add final sentence and paragraph
+            paragraph_token_spans.append((cur_paragraph_start_token, cur_token))
+            sentence_token_spans.append((cur_sentence_start_token, cur_token))
+            dep_trees.append(DependencyTree(cur_deps))
         
         return {
           "tokens": Tokens(text_ref, spans=token_char_spans),

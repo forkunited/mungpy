@@ -202,6 +202,35 @@ class TokensAnnotation(Annotation):
     def get_type(self):
         """ Get type of the annotation """
 
+class GenericTokensAnnotation(TokensAnnotation):
+    def __init__(self, annotation_type, target_ref, objs):
+        TokensAnnotation.__init__(self, target_ref)
+        self._annotation_type = annotation_type
+        self._objs = objs
+
+    def get_type(self):
+        return self._annotation_type
+
+    def get(self, index):
+        return self._objs[index]
+
+    def to_dict(self):
+        obj = dict()
+        obj["type"] = self._annotation_type
+        obj["target"] = self._target_ref.get_path()
+        obj["objs"] = self._objs
+        return obj
+
+    @staticmethod
+    def from_dict(datum, obj):
+        if not isinstance(obj, dict) or "type" not in obj or obj["type"] != self._annotation_type:
+            return obj
+
+        target_ref = mung.data.DatumReference(datum, obj["target"])
+        objs = obj["objs"]
+
+        return GenericTokensAnnotation(target_ref, objs)
+
 
 class PoS(TokensAnnotation):
     def __init__(self, target_ref, pos):
@@ -300,7 +329,7 @@ class MorphologicalProperties:
         props = dict()
 
         if conllu_str == "_":
-            return props
+            return MorphologicalProperties(props)
 
         for prop in conllu_str.split('|'):
             prop_key_value = prop.split('=')

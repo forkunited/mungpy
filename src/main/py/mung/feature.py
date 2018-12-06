@@ -293,8 +293,15 @@ class FeatureBucketedValueType(FeatureMatrixType):
 
     def _make_bucket_one_hot(self, value):
         one_hot = np.zeros(self._size)
-        index = int(min(np.floor((value-self._bucket_min)/self._bucket_width), len(one_hot) - 1))
-        one_hot[index] = 1.0
+        if isinstance(value, np.ndarray):
+            indices = np.floor((value-self._bucket_min)/self._bucket_width)
+            for index in indices:
+                index = int(min(index, len(one_hot) - 1))
+                one_hot[index] += 1.0
+            one_hot /= max(1.0, len(indices))
+        else:
+            index = int(min(np.floor((value-self._bucket_min)/self._bucket_width), len(one_hot) - 1))
+            one_hot[index] = 1.0
         return one_hot
 
     def __eq__(self, feature_type):
