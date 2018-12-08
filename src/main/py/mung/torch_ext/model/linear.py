@@ -3,6 +3,7 @@ import numpy as np
 import torch
 import torch.nn as nn
 from torch.autograd import Variable
+from mung.torch_ext.model.grammar import TreeGrammar
 
 class DataParameter:
     INPUT = "input"
@@ -285,6 +286,7 @@ class OrdinalLogisticRegression(LinearModel):
         return torch.sum(out < 0, 1).long()
 
     def score(self, batch, data_parameters):
+        out = self.forward_batch(batch, data_parameters)
         return out[:,0].squeeze().detach()
 
     def default_loss(self, batch, data_parameters):
@@ -489,3 +491,139 @@ class PairwiseOrdinalLogisticRegression(LinearModel):
 
     def get_loss_criterion(self):
         return self._loss
+
+
+# See http://ttic.uchicago.edu/~nati/Publications/RennieSrebroIJCAI05.pdf
+class OrdinalTreeGrammarRegression(LinearModel):
+    def __init__(self, name, input_size, label_count, grammar_type, opt, 
+                 max_binary=800, binary_per_pair=4, extend_interval=100):
+        super(OrdinalTreeGrammarRegression, self).__init__()
+        self._theta = nn.Parameter(torch.zeros(label_count-1))
+        self._olloss = OrdinalLogisticLoss(label_count)
+
+        self._name = name
+        self._input_size = input_size
+        self._output_size = 1
+        self._grammar = TreeGrammar(opt, self._input_size, grammar_type, max_binary=max_binary, binary_per_pair=binary_per_pair, extend_interval=extend_interval)
+
+        self._linear.weight = nn.Parameter(torch.zeros(self._output_size,self._input_size))
+
+    def forward(self, input):
+        B = input.size(0)
+        K = self._theta.size(0)
+        return self._theta.unsqueeze(0).expand(B, K) - self._grammar(input).squeeze().unsqueeze(1).expand(B, K)
+
+    def predict(self, batch, data_parameters, rand=False):
+        if rand:
+            raise ValueError("Random predictions unsupported by OrdinalLogisticRegression")
+
+        out = self.forward_batch(batch, data_parameters)
+        return torch.sum(out < 0, 1).long()
+
+    def score(self, batch, data_parameters):
+        out = self.forward_batch(batch, data_parameters)
+        return out[:,0].squeeze().detach()
+
+    def default_loss(self, batch, data_parameters):
+        return self.loss(batch, data_parameters, self._olloss)
+
+    def get_loss_criterion(self):
+        return self._olloss
+
+    def get_name(self):
+        return self._name
+
+    def on_gpu(self):
+        return next(self.parameters()).is_cuda
+
+    def get_weights(self):
+        # FIXME
+        #params = list(self.parameters())
+        #for param in params:
+        #    weights = param.data.view(-1)
+        #    if weights.size(0) ==  self._input_size * self._output_size: # FIXME Hack for now
+        #        return [w.item() for w in list(weights)] 
+        return None
+
+    def get_nonzero_weight_count(self):
+        return 0
+        # FIXME
+        #nz = torch.nonzero((list(self.parameters()))[0].data.view(-1))
+        #if len(nz.size()) == 0:
+        #    return 0
+        #else:
+        #    return nz.size(0)
+
+    def get_bias(self):
+        return None
+        # FIXME return list(self.parameters())[1].data[0]
+
+    def forward_batch(self, batch, data_parameters):
+        input = Variable(batch[data_parameters[DataParameter.INPUT]])
+        if self.on_gpu():
+            input = input.cuda()
+        return self(input)
+
+    def loss(self, batch, data_parameters, loss_criterion):
+        output = batch[data_parameters[DataParameter.OUTPUT]]
+        if self.on_gpu():
+            output = output.cuda()
+
+        model_out = self.forward_batch(batch, data_parameters).squeeze()
+        target_out = Variable(output).squeeze()
+        if not self._continuous_output:
+            target_out = target_out.long()
+        return loss_criterion(model_out, target_out)
+
+    def predict_data(self, data, data_parameters, rand=False, prediction_batch_size=64):
+        pred = None
+        prediction_batch_size = min(prediction_batch_size, data.get_size())
+        for i in range(data.get_num_batches(prediction_batch_size)):
+            batch = data.get_batch(i, prediction_batch_size)
+            cur_pred = self.predict(batch, data_parameters, rand=rand).numpy()
+            if pred is None:
+                pred = cur_pred
+            else:
+                pred = np.concatenate((pred, cur_pred), axis=0)
+        batch = data.get_final_batch(prediction_batch_size)
+        if batch is not None:
+            cur_pred = self.predict(batch, data_parameters, rand=rand).numpy()
+            if pred is None:
+                pred = cur_pred
+            else:
+                pred = np.concatenate((pred, cur_pred), axis=0)
+        return pred
+
+    def score_data(self, data, data_parameters, prediction_batch_size=64):
+        score = None
+        prediction_batch_size = min(prediction_batch_size, data.get_size())
+        for i in range(data.get_num_batches(prediction_batch_size)):
+            batch = data.get_batch(i, prediction_batch_size)
+            cur_score = self.score(batch, data_parameters).numpy()
+            if score is None:
+                score = cur_score
+            else:
+                score = np.concatenate((score, cur_score), axis=0)
+
+        batch = data.get_final_batch(prediction_batch_size)
+        if batch is not None:
+            cur_score = self.score(batch, data_parameters).numpy()
+            if score is None:
+                score = cur_score
+            else:
+                score = np.concatenate((score, cur_score), axis=0)
+        return score
+
+    def p_data(self, data, data_parameters, prediction_batch_size=64):
+        p = None
+        prediction_batch_size = min(prediction_batch_size, data.get_size())
+        for i in range(data.get_num_batches(prediction_batch_size)):
+            batch = data.get_batch(i, prediction_batch_size)
+            if p is None:
+                p = self.p(batch, data_parameters).numpy()
+            else:
+                p = np.concatenate((p, self.p(batch, data_parameters).numpy()), axis=0)
+        batch = data.get_final_batch(prediction_batch_size)
+        if batch is not None:
+            p = np.concatenate((p, self.p(batch, data_parameters).numpy()), axis=0)
+        return p

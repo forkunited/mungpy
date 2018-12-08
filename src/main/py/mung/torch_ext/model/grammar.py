@@ -51,7 +51,7 @@ class GrammarType:
 
 class TreeGrammar(nn.Module):
     def __init__(self, opt, input_size, grammar_type, max_binary=800, binary_per_pair=4, extend_interval=100):
-        super(TreeGrammarModel, self).__init__()
+        super(TreeGrammar, self).__init__()
 
         self._input_size = input_size
         self._grammar_type = grammar_type

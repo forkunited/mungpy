@@ -1,5 +1,6 @@
 from mung.torch_ext.model.linear import DataParameter, MultinomialLogisticRegression, LogisticRegression, \
-    LinearRegression, OrdinalLogisticRegression, OrdisticRegression, PairwiseOrdinalLogisticRegression
+    LinearRegression, OrdinalLogisticRegression, OrdisticRegression, PairwiseOrdinalLogisticRegression, \
+    OrdinalTreeGrammarRegression
 
 # Expects config of the form:
 # {
@@ -8,14 +9,14 @@ from mung.torch_ext.model.linear import DataParameter, MultinomialLogisticRegres
 #     output : [OUTPUT PARAMETER NAME]
 #   }
 #   name : [ID FOR MODEL]
-#   arch_type : [LinearRegression|LogisticRegression|MultinomialLogisticRegression|OrdinalLogisticRegression|OrdisticRegression|PairwiseOrdinalLogisticRegression]
+#   arch_type : [LinearRegression|LogisticRegression|MultinomialLogisticRegression|OrdinalLogisticRegression|OrdisticRegression|PairwiseOrdinalLogisticRegression|OrdinalTreeGrammarRegression]
 #   (MultinomialLogisticRegression|OrdinalLogisticRegression|OrdisticRegression|PairwiseOrdinalLogisticRegression) label_count : [NUMBER OF OUTPUT CLASSES]
 #   (Optional for PairwiseOrdinalLogisticRegression) confidence_ordinals : [INDICATOR OF WHETHER TO PREDICT ORDINALS BASED ON CONFIDENCES]
 #   (Optional for PairwiseOrdinalLogisticRegression) constant_scalar : [INDICATOR OF WHETHER s PARAMETER IS CONSTANT ACROSS THRESHOLDS]
 #   (Optional for PairwiseOrdinalLogisticRegression) hidden_sizes : [LIST OF SIZES FOR HIDDEN LAYERS]
 #   bias : [INDICATOR OF WHETHER OR NOT TO INCLUDE BIAS TERM]
 # }
-def load_linear_model(config, D, gpu=False):
+def load_linear_model(config, D, gpu=False, opt=None):
     data_parameter = DataParameter.make(**config["data_parameter"])
 
     name = config["name"]
@@ -50,11 +51,19 @@ def load_linear_model(config, D, gpu=False):
         hidden_sizes = []
         if "hidden_sizes" in config:
             hidden_sizes = config["hidden_sizes"]
-
         label_count = config["label_count"]
         model = PairwiseOrdinalLogisticRegression(name, input_size, label_count, bias=bias, ordinal_rescaling=ordinal_rescaling, confidence_ordinals=confidence_ordinals, constant_scalar=constant_scalar, hidden_sizes=hidden_sizes)
+    elif config["arch_type"] == "OrdinalTreeGrammarRegression":
+        label_count = config["label_count"]
+        grammar_type = config["grammar_type"]
+        max_binary = config["max_binary"]
+        binary_per_pair = config["binary_per_pair"]
+        extend_interval = config["extend_interval"]
+        model = OrdinalTreeGrammarRegression(name, input_size, label_count, grammar_type, opt, 
+                 max_binary=max_binary, binary_per_pair=binary_per_pair, extend_interval=extend_interval)
     else: # LinearRegression
         model = LinearRegression(name, input_size, bias=bias)
+        
     if gpu:
         model = model.cuda()
 
