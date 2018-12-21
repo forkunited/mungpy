@@ -494,7 +494,7 @@ class PairwiseOrdinalLogisticRegression(LinearModel):
 
 
 # See http://ttic.uchicago.edu/~nati/Publications/RennieSrebroIJCAI05.pdf
-class OrdinalTreeGrammarRegression(LinearModel):
+class OrdinalTreeGrammarRegression(nn.Module):
     def __init__(self, name, input_size, label_count, grammar_type, opt, 
                  max_binary=800, binary_per_pair=4, extend_interval=100):
         super(OrdinalTreeGrammarRegression, self).__init__()
@@ -506,7 +506,8 @@ class OrdinalTreeGrammarRegression(LinearModel):
         self._output_size = 1
         self._grammar = TreeGrammar(opt, self._input_size, grammar_type, max_binary=max_binary, binary_per_pair=binary_per_pair, extend_interval=extend_interval)
 
-        self._linear.weight = nn.Parameter(torch.zeros(self._output_size,self._input_size))
+    def set_optimizer(self, opt):
+        self._grammar.set_optimizer(opt)
 
     def forward(self, input):
         B = input.size(0)
@@ -565,14 +566,12 @@ class OrdinalTreeGrammarRegression(LinearModel):
         return self(input)
 
     def loss(self, batch, data_parameters, loss_criterion):
-        output = batch[data_parameters[DataParameter.OUTPUT]]
+        output = batch[data_parameters[DataParameter.ORDINAL]]
         if self.on_gpu():
             output = output.cuda()
 
         model_out = self.forward_batch(batch, data_parameters).squeeze()
-        target_out = Variable(output).squeeze()
-        if not self._continuous_output:
-            target_out = target_out.long()
+        target_out = Variable(output).squeeze().long()
         return loss_criterion(model_out, target_out)
 
     def predict_data(self, data, data_parameters, rand=False, prediction_batch_size=64):

@@ -157,6 +157,8 @@ class UDPipeAnnotator(Annotator):
 
         conllu_lines = conllu.split("\n")
 
+        #print conllu
+
         cur_deps = []
         cur_sentence_start_token = 0
         cur_paragraph_start_token = 0
@@ -189,22 +191,28 @@ class UDPipeAnnotator(Annotator):
                 morph_str = line_parts[5]
                 dep_parent = int(line_parts[6])
                 dep_type = line_parts[7]
-                spaces_after = line_parts[9]
+                spaces = line_parts[9]
 
+                spaces_parts = spaces.split('|')
+                num_spaces_before = 0
+                num_spaces_after = 1
+                for spaces_part in spaces_parts:
+                    if spaces_part == 'SpaceAfter=No':
+                        num_spaces_after = 0
+                    elif spaces_part.startswith('SpacesAfter='):
+                        spaces_after_value = spaces_part.split('=')[1]
+                        num_spaces_after = len(spaces_after_value.replace('\\', ''))
+                    elif spaces_part.startswith('SpacesBefore='):
+                        spaces_before_value = spaces_part.split('=')[1]
+                        num_spaces_before = len(spaces_before_value.replace('\\', ''))
+
+                cur_char += num_spaces_before
                 token_char_spans.append((cur_char, cur_char + len(token_str)))
                 pos_tags.append(pos)
                 lemmas.append(lemma)
                 cur_deps.append({ 'type' : dep_type, 'parent' : dep_parent - 1 - cur_contracted_token_skips})
                 morphs.append(MorphologicalProperties.from_conllu(morph_str))
                 token_strs.append(token_str)
-
-                num_spaces_after = 1
-                if spaces_after.startswith('SpaceAfter='):
-                    spaces_after_value = spaces_after.split('=')[1]
-                    if spaces_after_value == 'No':
-                        num_spaces_after = 0
-                    else:
-                        num_spaces_after = len(spaces_after_value.replace('\\', ''))
 
                 # print token_str + " " + spaces_after + " " + str(num_spaces_after) + " " + str(len(token_str))
                 cur_char += len(token_str) + num_spaces_after

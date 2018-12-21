@@ -15,6 +15,8 @@ from os.path import join, isfile
 from os import listdir
 from sets import Set
 
+pickle.settings['recurse'] = True
+
 FEATURE_TYPES = dict()
 FEATURE_SEQ_TYPES = dict()
 
