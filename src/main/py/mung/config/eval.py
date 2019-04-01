@@ -64,6 +64,6 @@ def load_data_metrics(config):
     for data_metrics_config in config["data_metrics"]:
         score_metrics = [load_metric(metric_config) for metric_config in data_metrics_config["score_metrics"]]
         prediction_metrics = [load_metric(metric_config) for metric_config in data_metrics_config["prediction_metrics"]]
-        for data_name, target_parameter in data_metrics_config["data"].iteritems():
+        for data_name, target_parameter in data_metrics_config["data"].items():
             data_metrics[data_name] = { "score_metrics" : score_metrics, "prediction_metrics" : prediction_metrics, "target_parameter" : target_parameter }
     return data_metrics

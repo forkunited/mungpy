@@ -3,6 +3,7 @@ import numpy as np
 import sklearn.metrics
 import scipy.stats
 from mung.data import DataSet
+from mung.feature import MixedBatchData
 
 class Evaluation(object):
     __metaclass__ = abc.ABCMeta
@@ -33,7 +34,7 @@ class Evaluation(object):
         for evaluation in evaluations:
             result = evaluation.run(model)
             if isinstance(result, dict) and flatten_result:
-                for key, value in result.iteritems():
+                for key, value in result.items():
                     results[evaluation.get_name() + "_" + key] = value
             elif isinstance(result, tuple) and flatten_result:
                 for i in range(len(result)):
@@ -83,26 +84,32 @@ class ClassificationReportResult:
     def _parse_result_str(self, result_str):
         lines = result_str.split("\n")
         for i, line in enumerate(lines):
-            line = line.strip().replace("avg / total", "avg/total")
+            line = line.strip() \
+                .replace("avg / total", "avg/total") \
+                .replace("micro avg", "micro-avg") \
+                .replace("macro avg", "macro-avg") \
+                .replace("weighted avg", "weighted-avg")
+
             if len(line) == 0 or i == 0:
                 continue
+
             line_parts = [line_part.strip() for line_part in line.split()]
             label, precision, recall, f1, support = line_parts
-            if label == "avg/total":
+            if label == "avg/total" or label == "micro-avg":
                 self._aggregate_result = { "precision" : float(precision), "recall" : float(recall), "f1" : float(f1), "support" : int(support) }
-            else:
+            elif label != "macro-avg" and label != "weighted-avg":
                 self._label_result[label] = { "precision" : float(precision), "recall" : float(recall), "f1" : float(f1), "support" : int(support) }
 
     def get_single_column_table(self):
         row_labels = []
         values = []
 
-        for label, label_results in self._label_result.iteritems():
-            for label_result_name, label_result_value in label_results.iteritems():
+        for label, label_results in self._label_result.items():
+            for label_result_name, label_result_value in label_results.items():
                 row_labels.append(label_result_name + "_" + label)
                 values.append([label_result_value])
 
-        for agg_result_name, agg_result_value in self._aggregate_result.iteritems():
+        for agg_result_name, agg_result_value in self._aggregate_result.items():
             row_labels.append(agg_result_name)
             values.append([agg_result_value])
 
@@ -198,7 +205,7 @@ class TrainTestCV:
         datas = dict()
         test_datas = dict()
         D_params = None
-        for key, d in self._data.iteritems(): # Construct train/dev/test
+        for key, d in self._data.items(): # Construct train/dev/test
             if key not in cv_partitions:
                 continue
 
@@ -213,7 +220,8 @@ class TrainTestCV:
             datas["dev" + suffix] = d_parts["dev"]
             datas["test" + suffix] = d_parts["test"]
 
-            D_params = d_parts["train"]
+            if not isinstance(d_parts["train"], MixedBatchData):
+                D_params = d_parts["train"]
 
             if key not in test_datas:
                 test_datas[key] = []
@@ -233,7 +241,7 @@ class TrainTestCV:
 
     def _make_cv_partitions(self):
         cv_partitions = dict()
-        for k, p in self._partitions.iteritems():
+        for k, p in self._partitions.items():
             train_parts = set(p.get_part_names()) - set([self._dev_part, self._test_part])
             cv_partitions[k] = p.copy() \
                 .merge_parts(list(train_parts), "train") \
@@ -263,14 +271,14 @@ class FoldedCV:
 
     def run(self, model_config, train_evaluation_config, \
             dev_evaluation_config, trainer_config, data_metrics, logger):
-        part_names = list(set(self._partitions.itervalues().next().get_part_names()) - self._exclude_parts)
+        part_names = list(set(next(iter(self._partitions.values())).get_part_names()) - self._exclude_parts)
         k = len(part_names) # k-fold cv with parts
         results = []
         models = []
         data_parameters = []
         datas = dict()
 
-        for key, d in self._data.iteritems():
+        for key, d in self._data.items():
             if key not in self._partitions:
                 if key not in datas:
                     datas[key] = []
@@ -282,7 +290,7 @@ class FoldedCV:
             D_params = None
 
             # Construct train/dev/test for current fold (i)
-            for key, d in self._data.iteritems():
+            for key, d in self._data.items():
                 if key not in partitions_i:
                     continue
 
@@ -300,7 +308,8 @@ class FoldedCV:
                 datas_i["dev" + suffix] = d_parts["dev"]
                 datas_i["test" + suffix] = d_parts["test"]
 
-                D_params = d_parts["train"]
+                if not isinstance(d_parts["train"], MixedBatchData):
+                    D_params = d_parts["train"]
 
                 if key not in datas:
                     datas[key] = []
@@ -328,7 +337,7 @@ class FoldedCV:
         if self._separate_dev_test:
             data_dev_name = part_names[(i+1) % len(part_names)]
             data_train_names -= set([data_dev_name])
-            for k, p in self._partitions.iteritems():
+            for k, p in self._partitions.items():
                 partitions_i[k] = p.copy() \
                                     .remove_parts(self._exclude_parts) \
                                     .merge_parts(list(data_train_names), "train") \
@@ -336,7 +345,7 @@ class FoldedCV:
                                     .merge_parts([data_test_name], "test")
             
         else:
-            for k, p in self._partitions.iteritems():
+            for k, p in self._partitions.items():
                 partitions_i[k] = p.copy() \
                                     .remove_parts(self._exclude_parts) \
                                     .merge_parts(list(data_train_names), "train") \
@@ -473,7 +482,7 @@ class FoldedCVResults:
             return None
 
         results_str = ""
-        for metric_name, metric_value in results.iteritems():
+        for metric_name, metric_value in results.items():
             if isinstance(metric_value, str) or \
                 isinstance(metric_value, ClassificationReportResult) or \
                 isinstance(metric_value, Table):
@@ -493,7 +502,7 @@ class FoldedCVResults:
             data_results = self.get_data_metric_results(data_name)
             if data_results is None:
                 continue
-            for metric_name, metric_value in data_results.iteritems():
+            for metric_name, metric_value in data_results.items():
                 if isinstance(metric_value, Table):
                     continue
                 elif isinstance(metric_value, ClassificationReportResult):
@@ -532,10 +541,10 @@ class Table:
         for i in range(len(self._values)):
             values.append([])
             for j in range(len(self._values[i])):
-                if isinstance(self._values[i][j], str) or isinstance(self._values[i][j], unicode):
-                    values[i].append(self._values[i][j].encode("utf-8"))
-                else:
-                    values[i].append(str(self._values[i][j]))
+                #if isinstance(self._values[i][j], str):
+                #    values[i].append(self._values[i][j].encode("utf-8"))
+                #else:
+                values[i].append(str(self._values[i][j]))
 
         s = ''
         if self._column_labels is not None:

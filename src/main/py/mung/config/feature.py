@@ -26,7 +26,7 @@ from mung.data import Partition
 def load_mvdata(config, ignore_paired_data=True):
     data_path = config["data_path"]
     mats = config["mats"]
-    
+
     D = MultiviewDataSet.load(data_path, **mats)
 
     D_paired = None
@@ -51,16 +51,16 @@ def load_mvdata(config, ignore_paired_data=True):
                     id_key = item["key"]
                 
                 merged_parts = dict()
-                for k,v in item["parts"].iteritems():
+                for k,v in item["parts"].items():
                     if v not in merged_parts:
                         merged_parts[v] = []
                     merged_parts[v].append(k)
 
-                for new_part_key, merged_keys in merged_parts.iteritems():
+                for new_part_key, merged_keys in merged_parts.items():
                     P.merge_parts(merged_keys, new_part_key)
                 
                 D_parts = D.partition(P, lambda d : d.get(id_key))
-                for part_key, part in D_parts.iteritems():
+                for part_key, part in D_parts.items():
                     if part_key in item["parts"]:
                         S[item["parts"][part_key]] = part
             else: # FILTER
@@ -69,28 +69,28 @@ def load_mvdata(config, ignore_paired_data=True):
                 if "filter_type" not in item or item["filter_type"] == "EQUAL":
                     def f(d):
                         d_match = True
-                        for d_key, d_value in subset_filter.iteritems():
+                        for d_key, d_value in subset_filter.items():
                             d_match = (d_match and d.get(d_key) == d_value)
                         return d_match
                     S[item["name"]] = D_cur.filter(f)
                 elif "filter_type" in item and item["filter_type"] == "NOT_EQUAL":
                     def f(d):
                         d_match = True
-                        for d_key, d_value in subset_filter.iteritems():
+                        for d_key, d_value in subset_filter.items():
                             d_match = (d_match and d.get(d_key) != d_value)
                         return d_match
                     S[item["name"]] = D_cur.filter(f)
                 elif "filter_type" in item and item["filter_type"] == "GREATER":
                     def f(d):
                         d_match = True
-                        for d_key, d_value in subset_filter.iteritems():
+                        for d_key, d_value in subset_filter.items():
                             d_match = (d_match and d.get(d_key) > d_value)
                         return d_match
                     S[item["name"]] = D_cur.filter(f)
                 elif "filter_type" in item and item["filter_type"] == "LESS":
                     def f(d):
                         d_match = True
-                        for d_key, d_value in subset_filter.iteritems():
+                        for d_key, d_value in subset_filter.items():
                             d_match = (d_match and d.get(d_key) < d_value)
                         return d_match
                     S[item["name"]] = D_cur.filter(f)

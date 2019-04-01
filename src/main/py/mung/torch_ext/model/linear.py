@@ -161,14 +161,14 @@ class LinearModel(nn.Module):
         prediction_batch_size = min(prediction_batch_size, data.get_size())
         for i in range(data.get_num_batches(prediction_batch_size)):
             batch = data.get_batch(i, prediction_batch_size)
-            cur_pred = self.predict(batch, data_parameters, rand=rand).numpy()
+            cur_pred = self.predict(batch, data_parameters, rand=rand).detach().numpy()
             if pred is None:
                 pred = cur_pred
             else:
                 pred = np.concatenate((pred, cur_pred), axis=0)
         batch = data.get_final_batch(prediction_batch_size)
         if batch is not None:
-            cur_pred = self.predict(batch, data_parameters, rand=rand).numpy()
+            cur_pred = self.predict(batch, data_parameters, rand=rand).detach().numpy()
             if pred is None:
                 pred = cur_pred
             else:

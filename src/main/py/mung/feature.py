@@ -13,7 +13,8 @@ from bidict import bidict
 from collections import Counter
 from os.path import join, isfile
 from os import listdir
-from sets import Set
+from functools import cmp_to_key
+
 
 pickle.settings['recurse'] = True
 
@@ -265,12 +266,12 @@ class FeatureMatrixType(FeatureType):
         return obj
 
     def save(self, file_path):
-        with open(file_path, 'w') as fp:
+        with open(file_path, 'wb') as fp:
             pickle.dump(self.to_dict(), fp)
 
     @staticmethod
     def load(file_path):
-        with open(file_path, 'r') as fp:
+        with open(file_path, 'rb') as fp:
             obj = pickle.load(fp)
             return FeatureMatrixType.from_dict(obj)
 
@@ -325,7 +326,7 @@ class FeatureBucketedValueType(FeatureMatrixType):
 
     @staticmethod
     def load(file_path):
-        with open(file_path, 'r') as fp:
+        with open(file_path, 'rb') as fp:
             obj = pickle.load(fp)
             return FeatureBucketedValueType.from_dict(obj)
 
@@ -395,12 +396,12 @@ class FeatureMatrixSequence(FeatureSequence):
         obj["length_fn"] = pickle.dumps(self._length_fn)
         obj["sequence_length"] = self._sequence_length
         obj["feature_size"] = self._feature_size
-        with open(file_path, 'w') as fp:
+        with open(file_path, 'wb') as fp:
             pickle.dump(obj, fp)
 
     @staticmethod
     def load(file_path):
-        with open(file_path, 'r') as fp:
+        with open(file_path, 'rb') as fp:
             obj = pickle.load(fp)
             return FeatureMatrixSequence.from_dict(obj)
 
@@ -621,7 +622,7 @@ class FeaturePathType(FeatureType):
         if self._fixed_path_values is not None:
             self._vocab = bidict()
             index = 0
-            for path, values in self._fixed_path_values.iteritems():
+            for path, values in self._fixed_path_values.items():
                 for value in values:
                     path_value = path + "__" + self._token_fn(value)
                     if path_value not in self._vocab:
@@ -663,7 +664,7 @@ class FeaturePathType(FeatureType):
                     else:
                         return 0
 
-            vocab_list.sort(cmp=cmp)
+            vocab_list.sort(key=cmp_to_key(cmp))
 
 
         if self._vocab is None:
@@ -713,12 +714,12 @@ class FeaturePathType(FeatureType):
         return obj
 
     def save(self, file_path):
-        with open(file_path, 'w') as fp:
+        with open(file_path, 'wb') as fp:
             pickle.dump(self.to_dict(), fp)
 
     @staticmethod
     def load(file_path):
-        with open(file_path, 'r') as fp:
+        with open(file_path, 'rb') as fp:
             obj = pickle.load(fp)
             return FeaturePathType.from_dict(obj)
 
@@ -836,12 +837,12 @@ class FeaturePathSequence(FeatureSequence):
         if self._vocab is not None:
             obj["vocab"] = dict(self._vocab)
 
-        with open(file_path, 'w') as fp:
+        with open(file_path, 'wb') as fp:
             pickle.dump(obj, fp)
 
     @staticmethod
     def load(file_path):
-        with open(file_path, 'r') as fp:
+        with open(file_path, 'rb') as fp:
             obj = pickle.load(fp)
             return FeaturePathSequence.from_dict(obj)
 
@@ -921,12 +922,12 @@ class FeaturePathVectorDictionaryType(FeaturePathType):
         return obj
 
     def save(self, file_path):
-        with open(file_path, 'w') as fp:
+        with open(file_path, 'wb') as fp:
             pickle.dump(self.to_dict(), fp)
 
     @staticmethod
     def load(file_path):
-        with open(file_path, 'r') as fp:
+        with open(file_path, 'rb') as fp:
             obj = pickle.load(fp)
             return FeaturePathVectorDictionaryType.from_dict(obj)
 
@@ -1051,7 +1052,7 @@ class FeatureProductType(FeatureType):
         return obj
 
     def save(self, file_path):
-        with open(file_path, 'w') as fp:
+        with open(file_path, 'wb') as fp:
             pickle.dump(self.to_dict(), fp)
 
     @staticmethod
@@ -1072,7 +1073,7 @@ class FeatureProductType(FeatureType):
 
     @staticmethod
     def load(file_path):
-        with open(file_path, 'r') as fp:
+        with open(file_path, 'rb') as fp:
             obj = pickle.load(fp)
             return FeatureProductType.from_dict(obj)
 
@@ -1182,7 +1183,7 @@ class FeatureSet:
         
         feature_types = []
         for file_path in file_paths:
-            with open(file_path, 'r') as fp:
+            with open(file_path, 'rb') as fp:
                 obj = pickle.load(fp)
                 if obj["type"] in FEATURE_TYPES:
                     feature_types.append(FEATURE_TYPES[obj["type"]].from_dict(obj))
@@ -1300,7 +1301,7 @@ class FeatureSequenceSet:
         file_paths = [join(dir_path, f) for f in listdir(dir_path) if isfile(join(dir_path, f))]
         feature_seqs = []
         for file_path in file_paths:
-            with open(file_path, 'r') as fp:
+            with open(file_path, 'rb') as fp:
                 obj = pickle.load(fp)
                 if obj["type"] in FEATURE_SEQ_TYPES:
                     feature_seqs.append(FEATURE_SEQ_TYPES[obj["type"]].from_dict(obj))
@@ -1462,7 +1463,7 @@ class DataFeatureMatrix:
     def _data_partition(self, data_parts, id_to_index, key_fn):
         dfmat_parts = dict()
 
-        for key, data_part in data_parts.iteritems():
+        for key, data_part in data_parts.items():
             mat_part = np.zeros([data_part.get_size(), self._feature_set.get_size()])
             for i in range(data_part.get_size()):
                 mat_part[i] = self._mat[id_to_index[data_part.get(i).get_id()]]
@@ -1711,7 +1712,7 @@ class DataFeatureMatrixSequence:
     def _data_partition(self, data_parts, id_to_index, key_fn):
         dfmats_parts = dict()
 
-        for key, data_part in data_parts.iteritems():
+        for key, data_part in data_parts.items():
             mats_part = [np.zeros(shape=(data_part.get_size(), self._feature_seq_set.get_feature_set(0).get_size())) for i in range(self._feature_seq_set.get_size())]
             part_indices = np.array([id_to_index[data_part.get(i).get_id()] for i in range(data_part.get_size())])
             lengths_part = self._lengths[part_indices]
@@ -1872,14 +1873,14 @@ class MultiviewDataSet:
             mv_parts[key] = MultiviewDataSet()
             mv_parts[key]._data = data_parts[key]
 
-        for name, dfmat in self._dfmats.iteritems():
+        for name, dfmat in self._dfmats.items():
             dfmat_parts = dfmat._data_partition(data_parts, id_to_index, key_fn)
-            for key, dfmat_part in dfmat_parts.iteritems():
+            for key, dfmat_part in dfmat_parts.items():
                 mv_parts[key]._dfmats[name] = dfmat_part
 
-        for name, dfmatseq in self._dfmatseqs.iteritems():
+        for name, dfmatseq in self._dfmatseqs.items():
             dfmatseq_parts = dfmatseq._data_partition(data_parts, id_to_index, key_fn)
-            for key, dfmatseq_part in dfmatseq_parts.iteritems():
+            for key, dfmatseq_part in dfmatseq_parts.items():
                 mv_parts[key]._dfmatseqs[name] = dfmatseq_part
 
         return mv_parts
@@ -1944,11 +1945,11 @@ class MultiviewDataSet:
         mv_filtered = MultiviewDataSet()
         mv_filtered._data = data_filtered
 
-        for name, dfmat in self._dfmats.iteritems():
+        for name, dfmat in self._dfmats.items():
             dfmat_filtered = dfmat._data_filter(data_filtered, id_to_index, filter_fn)
             mv_filtered._dfmats[name] = dfmat_filtered
 
-        for name, dfmatseq in self._dfmatseqs.iteritems():
+        for name, dfmatseq in self._dfmatseqs.items():
             dfmatseq_filtered = dfmatseq._data_filter(data_filtered, id_to_index, filter_fn)
             mv_filtered._dfmatseqs[name] = dfmatseq_filtered
 
@@ -1962,7 +1963,7 @@ class MultiviewDataSet:
         if size == 0:
             return self.filter(lambda d : False)
         subset_indices = np.random.choice(self.get_size(), size, replace=False)
-        subset_ids = Set([self._data.get(subset_indices[i]).get_id() for i in range(len(subset_indices))])
+        subset_ids = set([self._data.get(subset_indices[i]).get_id() for i in range(len(subset_indices))])
         filter_fn = lambda d : d.get_id() in subset_ids
         return self.filter(filter_fn)
 
@@ -1974,7 +1975,7 @@ class MultiviewDataSet:
         if size == 0:
             return self.filter(lambda d : False)
         subset_indices = np.array(range(subset_i*size, (subset_i+1)*size))
-        subset_ids = Set([self._data.get(subset_indices[i]).get_id() for i in range(len(subset_indices))])
+        subset_ids = set([self._data.get(subset_indices[i]).get_id() for i in range(len(subset_indices))])
         filter_fn = lambda d : d.get_id() in subset_ids
         return self.filter(filter_fn)
 
@@ -2044,10 +2045,10 @@ class MultiviewDataSet:
         else:
             mv._data = data_cls.load(data_path)
 
-        for name, path in dfmat_paths.iteritems():
+        for name, path in dfmat_paths.items():
             mv._dfmats[name] = DataFeatureMatrix.load(path, data=mv._data)
 
-        for name, path in dfmatseq_paths.iteritems():
+        for name, path in dfmatseq_paths.items():
             mv._dfmatseqs[name] = DataFeatureMatrixSequence.load(path, data=mv._data)
 
         return mv
@@ -2119,7 +2120,7 @@ class PairedMultiviewDataSet:
         batch_dict = dict()
         for mat_view in mat_views:
             if isinstance(self._paired_feature_types[mat_view], dict):
-                for paired_view, paired_view_type in self._paired_feature_types[mat_view].iteritems():
+                for paired_view, paired_view_type in self._paired_feature_types[mat_view].items():
                     batch_dict[paired_view] = self._compute_paired_value(batch_dict1[mat_view], batch_dict2[mat_view], paired_view_type)
             else:
                 batch_dict[mat_view] = self._compute_paired_value(batch_dict1[mat_view], batch_dict2[mat_view], self._paired_feature_types[mat_view])
@@ -2153,7 +2154,7 @@ class PairedMultiviewDataSet:
         mv_parts = self._mvdata.partition(partition, key_fn)
 
         part_keys_to_indices = dict()
-        for part_name, mv_part in mv_parts.iteritems():
+        for part_name, mv_part in mv_parts.items():
             part_keys_to_indices[part_name] = dict()
             for i in range(mv_part.get_size()):
                 key = key_fn(mv_part.get_data().get(i))
@@ -2190,7 +2191,7 @@ class PairedMultiviewDataSet:
             data_indices_parts[part_key] = indices_array
 
         pmv_parts = dict()
-        for k, v in mv_parts.iteritems():
+        for k, v in mv_parts.items():
             pmv_parts[k] = PairedMultiviewDataSet(v, data_indices_parts[k], self._paired_feature_types)
 
         return pmv_parts
@@ -2309,7 +2310,7 @@ class MixedBatchData:
         data_parts = dict()
         for data in self._datas:
             parts = data.partition(partition, key_fn)
-            for k, v in parts.iteritems():
+            for k, v in parts.items():
                 if k not in data_parts:
                     data_parts[k] = []
                 data_parts[k].append(v)

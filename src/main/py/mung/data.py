@@ -2,6 +2,7 @@ import numpy as np
 import copy
 import abc
 import os
+import six
 from jsonpath_ng import jsonpath
 from jsonpath_ng.ext import parse
 from os import listdir
@@ -223,7 +224,7 @@ class DataSet:
             for val in vals:
                 if val is None:
                     continue
-                elif isinstance(val, unicode) or isinstance(val, str) or \
+                elif isinstance(val, six.string_types) or \
                     isinstance(val, float) or isinstance(val, int):
                     if val not in hist:
                         hist[val] = 0
@@ -288,7 +289,7 @@ class DataSet:
             ordered_data = [D._data[keys_to_indices[order[i]]] for i in range(len(order))]
             D._data = ordered_data
 
-        print "Loaded data of size " + str(D.get_size()) + "."
+        print("Loaded data of size " + str(D.get_size()) + ".")
         return D
 
 class Partition:
@@ -320,7 +321,7 @@ class Partition:
                         split_data[part_name] = []
                     split_data[part_name].append(data.get(i))
 
-        for key, data in split_data.iteritems():
+        for key, data in split_data.items():
             split_data[key] = DataSet(data=data)
 
         return split_data
@@ -400,7 +401,7 @@ class Partition:
 
     def make_reverse_lookup(self):
         reverse_lookup = dict()
-        for part_key, part_dict in self._parts.iteritems():
+        for part_key, part_dict in self._parts.items():
             for key in part_dict.keys():
                 reverse_lookup[key] = part_key
         return reverse_lookup

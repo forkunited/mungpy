@@ -1,6 +1,7 @@
 import csv
 import numpy as np
 import codecs
+import six
 
 class StorageFormat:
     VEC = "VEC"
@@ -27,7 +28,7 @@ class StoredVectorDictionary:
         if len(self._vecs) == 0:
             self._vec_size = 0
         else:
-            self._vec_size = self._vecs.values()[0].shape[0]
+            self._vec_size = list(self._vecs.values())[0].shape[0]
 
     def to_dict(self):
         return self._vecs
@@ -88,6 +89,9 @@ class StoredVectorDictionary:
     def make_and_save(vecs, file_path, delimiter=" "):
         with open(file_path, 'w') as fp:
             for k in vecs:
-                fp.write(k.encode("utf-8") + delimiter)
+                if six.PY2:
+                    fp.write(k.encode("utf-8") + delimiter)
+                else:
+                    fp.write(k + delimiter)
                 fp.write(delimiter.join([str(v) for v in vecs[k].tolist()]) + "\n")
         return StoredVectorDictionary(vecs=vecs, file_path=file_path, delimiter=delimiter)

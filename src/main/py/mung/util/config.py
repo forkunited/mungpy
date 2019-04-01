@@ -25,14 +25,14 @@ class Config:
     def _set_properties_environment(self, properties, environment):
         if isinstance(properties, list):
             for i in range(len(properties)):
-                if isinstance(properties[i], basestring):
+                if isinstance(properties[i], str):
                     properties[i] = self._set_str_environment(properties[i], environment)
                 else:
                     self._set_properties_environment(properties[i], environment)
         elif isinstance(properties, dict):
             for key in properties.keys():
                 item = properties[key]
-                if isinstance(item, basestring):
+                if isinstance(item, str):
                     properties[key] = self._set_str_environment(item, environment)
                 else:
                     self._set_properties_environment(item, environment)
@@ -76,7 +76,7 @@ class Config:
         if len(args_list) % 2 != 0:
             raise ValueError("Args list must be even length to parse into config")
 
-        for i in range(len(args_list)/2):
+        for i in range(int(len(args_list)/2)):
             arg_name = args_list[i*2].replace("--", "").replace("-", "")
             arg_value = args_list[i*2+1]
 

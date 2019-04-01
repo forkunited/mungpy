@@ -29,7 +29,7 @@ class Annotator(object):
         annotated_data = []
         for i in range(data.get_size()):
             if i % 1000 == 0:
-                print "Annotating " + data.get(i).get_id() + " (" + str(i+1) +  "/" + str(data.get_size()) + ")"
+                print("Annotating " + data.get(i).get_id() + " (" + str(i+1) +  "/" + str(data.get_size()) + ")")
             annotated_data.append(self.annotate_datum(data.get(i)))
         return mung.data.DataSet(data=annotated_data)
 

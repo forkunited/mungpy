@@ -1,6 +1,5 @@
 import csv
 from collections import OrderedDict
-from sets import Set
 
 class Logger:
     def __init__(self, empty_value="", verbose=True):
@@ -33,7 +32,7 @@ class Logger:
 
         if self._verbose:
             out_str = ""
-            keys_done = Set([])
+            keys_done = set()
             for key in self._key_order:
                 if key in self._records:
                     keys_done.add(key)
@@ -42,7 +41,7 @@ class Logger:
                 if key not in keys_done:
                     out_str += key + ": " + str(self._records[key][self._record_count]) +"\t"
             out_str += "\n"
-            print out_str
+            print(out_str)
 
         self._record_count +=1
 
@@ -60,14 +59,14 @@ class Logger:
         if file_path is None:
             return
 
-        all_keys = Set([])
+        all_keys = set()
         if record_prefix is not None:
             for key in record_prefix.keys():
                 all_keys.add(key)
         for key in self._records.keys():
             all_keys.add(key)
 
-        keys_done = Set([])
+        keys_done = set()
         full_key_order = []
         for key in self._key_order:
             if key in all_keys:
@@ -79,7 +78,7 @@ class Logger:
                 full_key_order.append(key)
 
         fields = OrderedDict([(k, None) for k in full_key_order])
-        f = open(file_path, 'wb')
+        f = open(file_path, 'w')
         try:
             writer = csv.DictWriter(f, delimiter='\t', fieldnames=fields)
             writer.writeheader()

@@ -52,7 +52,7 @@ class GrammarType:
     RANDOM = "Random"
 
 class TreeGrammar(nn.Module):
-    def __init__(self, opt, input_size, grammar_type, max_binary=800, binary_per_pair=4, extend_interval=100):
+    def __init__(self, opt, input_size, grammar_type, max_binary=800, binary_per_pair=4, extend_interval=500):
         super(TreeGrammar, self).__init__()
 
         self._opt = opt
@@ -96,7 +96,7 @@ class TreeGrammar(nn.Module):
 
         batch_size = input.size(0)
         out = self._base_linear(input)
-        binary_out = [[None for j in range(self._max_binary)] for i in range(len(self._binary_names))]
+        binary_out = [[torch.zeros(batch_size, 1) for j in range(self._max_binary)] for i in range(len(self._binary_names))]
         for j, binary_name in enumerate(self._binary_names):
             for i in range(len(self._binary_indices[binary_name])):
                 index_0, index_1 = self._binary_indices[binary_name][i]
@@ -115,11 +115,11 @@ class TreeGrammar(nn.Module):
                     input_1 = input[:,binary_index_1]
                 else:
                     input_1 = binary_out[binary_type_1][binary_index_1]
-                binary_out[j][i] = self._binary_ops[binary_name][i](input_0.unsqueeze(1), input_1.unsqueeze(1)).squeeze()
+                binary_out[j][i] = self._binary_ops[binary_name][i](input_0.unsqueeze(1), input_1.unsqueeze(1))
 
         for i in range(len(self._binary_names)):
-            binary_out = [torch.cat(binary_out[j]) for j in range(len(self._binary_names))] # FIXME Filter nones...
-            out += self._binary_linears[self._binary_names[i]](binary_out[i])
+            binary_out_squished = torch.cat(binary_out[i], dim=1)
+            out += self._binary_linears[self._binary_names[i]](binary_out_squished)
 
         return out
 
@@ -128,8 +128,8 @@ class TreeGrammar(nn.Module):
             for binary_type_1 in range(-1, len(self._binary_names)):
                 linear_0 = self._base_linear if binary_type_0 < 0 else self._binary_linears[self._binary_names[binary_type_0]]
                 linear_1 = self._base_linear if binary_type_1 < 0 else self._binary_linears[self._binary_names[binary_type_1]]
-                linear_nonzero_0 = torch.nonzero(torch.abs(linear_0.weight.data.squeeze()) > 1.0).squeeze()
-                linear_nonzero_1 = torch.nonzero(torch.abs(linear_1.weight.data.squeeze()) > 1.0).squeeze()
+                linear_nonzero_0 = torch.nonzero(torch.abs(linear_0.weight.data.squeeze()) > 0.0).squeeze()
+                linear_nonzero_1 = torch.nonzero(torch.abs(linear_1.weight.data.squeeze()) > 0.0).squeeze()
                 for linear_index_0 in linear_nonzero_0:
                     linear_index_0 = linear_index_0.item()
                     for linear_index_1 in linear_nonzero_1:
